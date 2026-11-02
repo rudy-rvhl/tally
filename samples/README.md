@@ -14,3 +14,16 @@ sample data as if it were yours.
 
 Reconciling the Scotiabank Visa statement (balance owed):
 $3,136.55 opening + $589.51 charges − $2,650.00 payments = $1,076.06 closing.
+
+## PDF statements (`samples/pdf/`)
+
+Regenerate them with `python3 samples/pdf/generate.py` (needs `reportlab`, plus Pillow and
+`pdftoppm` for the scanned one).
+
+| File | Layout |
+|---|---|
+| `chequing-withdrawals-deposits.pdf` | Bank chequing, Withdrawals / Deposits / Balance columns, 2 pages, payee on a second line |
+| `credit-card-dec-jan.pdf` | Card with transaction and posting dates, `CR` and trailing-minus credits, Dec → Jan period |
+| `amex-style.pdf` | Single Amount column, minus-sign credits, reference lines |
+| `desjardins-francais.pdf` | French: RETRAIT / DÉPÔT / SOLDE, "02 OCT" dates, "1 234,56" amounts |
+| `scanned-chequing.pdf` | Image-only (scanned) copy of the chequing statement, slightly tilted |

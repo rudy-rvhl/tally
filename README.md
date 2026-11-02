@@ -9,7 +9,7 @@ Every total can be clicked through to the transactions behind it.
 
 - **Five sections:** Overview, Spending, Accounts, Review, Reports. Accountant tools sit under
   *Advanced* and only appear in Accountant mode.
-- **Statement import:** drag and drop CSV, Excel (.xlsx), OFX/QFX or PDF (with extractable text).
+- **Statement import:** drag and drop CSV, Excel (.xlsx), OFX/QFX or PDF, including scanned PDFs.
   It recognises RBC, TD, CIBC, Desjardins, Scotiabank, BMO, National Bank and Amex layouts, and
   works out columns, date order and sign conventions for other banks. You see a preview and can fix
   rows, types, categories, signs and column mapping before anything is saved. The original file is
@@ -55,6 +55,19 @@ statements are in `samples/`.
 Optional: set `ANTHROPIC_API_KEY` to let Claude interpret questions the built-in rules don't
 understand.
 
+## How PDFs are read
+
+PDFs are read from their layout, not just their text. Each amount is matched to the column it sits
+under (Withdrawals / Deposits / Amount / Balance, or Retrait / Dépôt / Solde), payee lines that
+wrap onto a second line are joined, and every sign is checked against the printed running balance.
+The reader also picks up the statement period, the opening and closing balances, and the account's
+last four digits, so the statement can be reconciled straight after import.
+
+Scanned (image-only) PDFs are rendered and read with Tesseract OCR, using English and French language
+data bundled in `node_modules`, so no network access is needed. They then go through the same reader,
+and the preview asks the user to confirm each amount. A two-page scan takes about 4 seconds. OCR is
+optional at deploy time: if its packages are missing, the app says so and asks for a CSV or OFX.
+
 ## Tests
 
 ```bash
@@ -70,6 +83,6 @@ combining, export, and the phone layout.
 
 ## Not included yet
 
-- OCR for scanned (image-only) PDFs. These are detected and the user is asked for a CSV/OFX instead.
+- OCR on very poor scans (faxes, phone photos) will need manual corrections in the preview.
 - Shared rate-limit storage. The sign-in limiter is per server process.
 - Multi-user workspaces. Each login has its own books.
