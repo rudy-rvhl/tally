@@ -2,7 +2,7 @@
   "name": "ledgeriq",
   "version": "0.1.0",
   "private": true,
-  "description": "LedgerIQ — financial reconciliation and spending intelligence",
+  "description": "LedgerIQ \u2014 financial reconciliation and spending intelligence",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -14,7 +14,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "doctor": "node scripts/doctor.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

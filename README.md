@@ -55,6 +55,13 @@ statements are in `samples/`.
 Optional: set `ANTHROPIC_API_KEY` to let Claude interpret questions the built-in rules don't
 understand.
 
+### If something doesn't work
+
+```bash
+npm run doctor            # checks .env, the encryption key and the database, and says what to fix
+npm run doctor -- --fix   # also creates the ledgeriq database user, database and tables if they're missing
+```
+
 ## How PDFs are read
 
 PDFs are read from their layout, not just their text. Each amount is matched to the column it sits
