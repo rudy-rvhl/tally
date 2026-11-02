@@ -12,6 +12,7 @@ import * as edits from "@/lib/services/edits";
 import { unlinkTransfer, linkTransfers } from "@/lib/services/transfers";
 import { addAdjustment, evaluateStatement } from "@/lib/services/reconciliation";
 import { parseAmountToCents } from "@/lib/engine/money";
+import { clearFailures, isLocked, recordFailure } from "@/lib/ratelimit";
 
 export interface ActionState { ok?: boolean; error?: string; message?: string; /** Client navigates here on success. */ redirectTo?: string }
 
@@ -33,8 +34,13 @@ export async function registerAction(_: ActionState, f: FormData): Promise<Actio
 
 export async function loginAction(_: ActionState, f: FormData): Promise<ActionState> {
   const email = str(f, "email").toLowerCase();
+  if (isLocked(email)) return { error: "Too many sign-in attempts. For your security, please wait 15 minutes and try again." };
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !(await verifyPassword(String(f.get("password") ?? ""), user.passwordHash))) return { error: "That email and password don't match. Please try again." };
+  if (!user || !(await verifyPassword(String(f.get("password") ?? ""), user.passwordHash))) {
+    recordFailure(email);
+    return { error: "That email and password don't match. Please try again." };
+  }
+  clearFailures(email);
   await createSession(user.id);
   return { ok: true, redirectTo: "/" };
 }

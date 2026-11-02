@@ -182,6 +182,70 @@ await page.waitForSelector("text=Trial balance", { timeout: 15000 });
 check(await page.isVisible("text=Debits equal credits."), "trial balance balances");
 await shot("11-accountant-journal");
 
+// 11b. Correcting mistakes safely
+// Review: answer a category question for the e-transfer
+await go(`${BASE}/review`);
+const before = await page.locator(".card:has-text('TREMBLAY')").count();
+await page.locator(".card:has-text('TREMBLAY') select[name=categoryId]").selectOption({ label: "Professional services" });
+await page.locator(".card:has-text('TREMBLAY') button:has-text('Save')").click();
+await page.locator(".card:has-text('TREMBLAY')").waitFor({ state: "detached", timeout: 15000 });
+await go(`${BASE}/review`);
+check(before === 1 && (await page.locator(".card:has-text('TREMBLAY')").count()) === 0, "answering a review question removes it from the queue");
+
+// Mark a purchase as a duplicate, check it leaves the totals, then restore it
+const spentOf = async () => { await go(`${BASE}/?month=2026-10`); return money(await page.locator("a:has-text('Money spent')").first().textContent()); };
+const spentBefore = await spentOf();
+await go(`${BASE}/transactions?q=AIR%20CANADA`);
+await page.locator("table tbody tr a").first().click();
+await page.waitForURL(/transactions\/c/);
+const txnUrl = page.url();
+await page.click("button:has-text('Mark as duplicate')");
+await page.waitForSelector("text=excluded from all totals", { timeout: 15000 });
+const spentExcluded = await spentOf();
+check(Math.abs(spentBefore - spentExcluded - 642.18) < 0.005, `duplicate leaves totals (${spentBefore} -> ${spentExcluded})`);
+await go(txnUrl);
+await page.click("button:has-text('Restore it')");
+await page.waitForSelector("button:has-text('Mark as duplicate')", { timeout: 15000 });
+check(Math.abs((await spentOf()) - spentBefore) < 0.005, "restoring a duplicate puts it back in the totals");
+await go(txnUrl);
+check(await page.isVisible("text=Marked as a duplicate") && await page.isVisible("text=Restored"), "both changes appear in the change history");
+
+// Attach a receipt
+const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+await page.setInputFiles("input[name=receipt]", { name: "air-canada-invoice.png", mimeType: "image/png", buffer: png });
+await page.click("button:has-text('Attach')");
+await page.waitForSelector("text=Receipt attached.", { timeout: 15000 });
+await go(txnUrl);
+const receiptHref = await page.locator("a:has-text('air-canada-invoice.png')").getAttribute("href");
+const rr = await page.request.get(`${BASE}${receiptHref}`);
+check(rr.ok() && Buffer.compare(Buffer.from(await rr.body()), png) === 0, "receipt is stored encrypted and comes back byte-for-byte");
+
+// Split a Costco purchase (Accountant View is on)
+await go(`${BASE}/transactions?q=COSTCO&month=2026-10`);
+await page.locator("table tbody tr a").first().click();
+await page.waitForURL(/transactions\/c/);
+const cats = page.locator("select[name=splitCategory]");
+const amts = page.locator("input[name=splitAmount]");
+await cats.nth(0).selectOption({ label: "Groceries" }); await amts.nth(0).fill("80.00");
+await cats.nth(1).selectOption({ label: "Office expenses" }); await amts.nth(1).fill("30.00");
+await page.click("button:has-text('Save split')");
+await page.waitForSelector("text=/The parts add up to 110.00/", { timeout: 15000 });
+check(true, "a split that doesn't add up is refused with a clear explanation");
+await amts.nth(1).fill("32.34");
+await page.click("button:has-text('Save split')");
+await page.waitForSelector("text=Split saved.", { timeout: 15000 });
+await go(`${BASE}/spending?view=categories&month=2026-10`);
+check(await page.locator("section a:has-text('Office expenses')").first().isVisible() && (await page.locator("section a:has-text('Office expenses')").first().textContent()).includes("95.61"), "split parts show up under their own categories (office = $63.27 Staples + $32.34 split)");
+
+// Combine two supplier names
+await go(`${BASE}/settings`);
+await page.selectOption("#into", { label: await page.locator("#into option:has-text('Uber Eats')").textContent() });
+await page.locator("label:has-text('Starbucks') input[name=from]").check();
+await page.click("button:has-text('Combine')");
+await page.waitForSelector("text=/Combined 1 supplier name/", { timeout: 15000 });
+await go(`${BASE}/transactions?q=STARBUCKS`);
+check((await page.locator("table tbody tr:has-text('Uber Eats')").count()) === 3, "combined supplier's transactions moved, nothing deleted");
+
 // 12. Export
 const resp = await page.request.get(`${BASE}/api/export?month=2026-10`);
 const csv = await resp.text();
