@@ -1,0 +1,409 @@
+// LedgerIQ data model.
+// Money is stored as signed integer cents in the account's own currency.
+// Sign convention (cash perspective, for every account type):
+//   amountCents > 0  money came INTO the account holder (deposit, refund, card payment received)
+//   amountCents < 0  money went OUT (purchase, fee, withdrawal, payment sent)
+// Liability accounts (credit cards, lines of credit) are reconciled with the
+// inverse sign; see src/lib/engine/reconcile.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ExperienceMode {
+  SIMPLE
+  ACCOUNTANT
+}
+
+enum AccountType {
+  PERSONAL_CHEQUING
+  PERSONAL_SAVINGS
+  CREDIT_CARD
+  BUSINESS_CHEQUING
+  BUSINESS_CREDIT_CARD
+  LINE_OF_CREDIT
+  CASH
+  OTHER
+}
+
+enum Ownership {
+  PERSONAL
+  BUSINESS
+}
+
+enum AccountStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum TxnKind {
+  PURCHASE
+  REFUND
+  INCOME
+  TRANSFER
+  CARD_PAYMENT
+  LOAN_PAYMENT
+  INTEREST
+  FEE
+  REVERSAL
+  ADJUSTMENT
+}
+
+enum TxnStatus {
+  POSTED
+  PENDING
+}
+
+enum ClassificationSource {
+  NONE
+  USER
+  RULE
+  HISTORY
+  MERCHANT
+  PATTERN
+  AI
+}
+
+enum CategoryKind {
+  EXPENSE
+  INCOME
+  NON_OPERATING
+}
+
+enum ReviewType {
+  DUPLICATE
+  CATEGORY
+  TRANSFER
+  RECONCILIATION
+  MERCHANT
+}
+
+enum ReviewStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum StatementStatus {
+  NOT_RECONCILED
+  BALANCED
+  DIFFERENCE
+}
+
+enum LedgerType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  name         String?
+  passwordHash String
+  mode         ExperienceMode @default(SIMPLE)
+  baseCurrency String         @default("CAD")
+  createdAt    DateTime       @default(now())
+
+  sessions      Session[]
+  accounts      Account[]
+  transactions  Transaction[]
+  imports       ImportBatch[]
+  merchants     Merchant[]
+  categories    Category[]
+  rules         CategoryRule[]
+  reviews       ReviewItem[]
+  audit         AuditLog[]
+  rates         ExchangeRate[]
+  ledger        LedgerAccount[]
+  journal       JournalEntry[]
+}
+
+model Session {
+  id        String   @id // sha256 of the cookie token
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Account {
+  id                  String        @id @default(cuid())
+  userId              String
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institution         String
+  name                String
+  type                AccountType
+  currency            String        @default("CAD")
+  mask                String? // last 4 digits only; full numbers are never stored
+  openingBalanceCents Int?
+  openingBalanceDate  DateTime?
+  ownership           Ownership     @default(BUSINESS)
+  status              AccountStatus @default(ACTIVE)
+  createdAt           DateTime      @default(now())
+
+  transactions Transaction[]
+  imports      ImportBatch[]
+  statements   Statement[]
+
+  @@index([userId])
+}
+
+model ImportBatch {
+  id                   String    @id @default(cuid())
+  userId               String
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId            String
+  account              Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  fileName             String
+  fileType             String
+  fileSha256           String
+  detectedInstitution  String?
+  parserName           String
+  periodStart          DateTime?
+  periodEnd            DateTime?
+  rowsDetected         Int
+  rowsImported         Int
+  rowsSkippedDuplicate Int
+  rowsFlagged          Int
+  encryptedFile        Bytes? // original file, AES-256-GCM, for audit
+  createdAt            DateTime  @default(now())
+
+  transactions Transaction[]
+  statements   Statement[]
+
+  @@index([userId, accountId])
+}
+
+model Statement {
+  id                  String          @id @default(cuid())
+  accountId           String
+  account             Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  importBatchId       String?
+  importBatch         ImportBatch?    @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  periodStart         DateTime
+  periodEnd           DateTime
+  openingBalanceCents Int
+  closingBalanceCents Int
+  status              StatementStatus @default(NOT_RECONCILED)
+  differenceCents     Int?
+  reconciledAt        DateTime?
+  notes               String?
+  createdAt           DateTime        @default(now())
+
+  @@index([accountId, periodStart])
+}
+
+model Merchant {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name              String
+  defaultCategoryId String?
+  defaultCategory   Category? @relation(fields: [defaultCategoryId], references: [id], onDelete: SetNull)
+  createdAt         DateTime  @default(now())
+
+  aliases      MerchantAlias[]
+  transactions Transaction[]
+
+  @@unique([userId, name])
+}
+
+model MerchantAlias {
+  id         String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  pattern    String // normalized description key, uppercase
+  source     String   @default("SYSTEM") // SYSTEM | USER
+  createdAt  DateTime @default(now())
+
+  @@unique([merchantId, pattern])
+  @@index([pattern])
+}
+
+model Category {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  parentId     String?
+  parent       Category?    @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Category[]   @relation("CategoryTree")
+  kind         CategoryKind @default(EXPENSE)
+  taxTreatment String? // e.g. "Fully deductible", "50% meals", "Not deductible"
+  ledgerCode   String? // chart-of-accounts code used in Accountant View
+  isSystem     Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+
+  transactions Transaction[]
+  rules        CategoryRule[]
+  merchants    Merchant[]
+  splits       Split[]
+
+  @@unique([userId, parentId, name])
+}
+
+model CategoryRule {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pattern     String // case-insensitive substring of the description or merchant name
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  kind        TxnKind?
+  accountId   String?
+  createdFrom String   @default("USER") // USER | CORRECTION
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Transaction {
+  id                  String               @id @default(cuid())
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId           String
+  account             Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  importBatchId       String?
+  importBatch         ImportBatch?         @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  date                DateTime             @db.Date
+  amountCents         Int
+  currency            String
+  originalDescription String
+  description         String
+  externalId          String? // FITID / bank reference when provided
+  fingerprint         String
+  kind                TxnKind              @default(PURCHASE)
+  status              TxnStatus            @default(POSTED)
+  merchantId          String?
+  merchant            Merchant?            @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+  merchantConfidence  Float                @default(0)
+  categoryId          String?
+  category            Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categorySource      ClassificationSource @default(NONE)
+  categoryConfidence  Float                @default(0)
+  categoryConfirmed   Boolean              @default(false)
+  kindConfirmed       Boolean              @default(false)
+  transferGroupId     String?
+  excluded            Boolean              @default(false) // e.g. confirmed duplicate; never deleted
+  excludedReason      String?
+  taxCode             String?
+  notes               String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  splits   Split[]
+  receipts Receipt[]
+
+  @@unique([accountId, fingerprint])
+  @@index([userId, date])
+  @@index([userId, merchantId])
+  @@index([userId, categoryId])
+  @@index([transferGroupId])
+}
+
+model Split {
+  id            String      @id @default(cuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      Category    @relation(fields: [categoryId], references: [id])
+  amountCents   Int // same sign as the parent transaction
+  memo          String?
+}
+
+model Receipt {
+  id            String      @id @default(cuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  fileName      String
+  mimeType      String
+  sizeBytes     Int
+  data          Bytes // AES-256-GCM encrypted
+  createdAt     DateTime    @default(now())
+}
+
+model ReviewItem {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         ReviewType
+  status       ReviewStatus @default(OPEN)
+  txnId        String?
+  relatedTxnId String?
+  statementId  String?
+  message      String
+  payload      Json?
+  resolution   String?
+  createdAt    DateTime     @default(now())
+  resolvedAt   DateTime?
+
+  @@index([userId, status])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entityType String
+  entityId   String
+  action     String
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, entityType, entityId])
+}
+
+model ExchangeRate {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency  String // converted FROM this currency INTO the user's base currency
+  month     String // YYYY-MM
+  rate      Float
+  source    String   @default("Entered by user")
+  createdAt DateTime @default(now())
+
+  @@unique([userId, currency, month])
+}
+
+model LedgerAccount {
+  id     String     @id @default(cuid())
+  userId String
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code   String
+  name   String
+  type   LedgerType
+
+  @@unique([userId, code])
+}
+
+model JournalEntry {
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime      @db.Date
+  memo      String
+  createdAt DateTime      @default(now())
+  lines     JournalLine[]
+}
+
+model JournalLine {
+  id          String       @id @default(cuid())
+  entryId     String
+  entry       JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  ledgerCode  String
+  debitCents  Int          @default(0)
+  creditCents Int          @default(0)
+  memo        String?
+}
