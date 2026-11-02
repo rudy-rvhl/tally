@@ -80,3 +80,18 @@ describe("file sniffing", () => {
     expect(detectFileKind("x.qfx", Buffer.from("OFXHEADER:100"))).toBe("QFX");
   });
 });
+
+describe("Excel import", () => {
+  it("reads an .xlsx export with real date cells", async () => {
+    const ExcelJS = (await import("exceljs")).default;
+    const { parseXlsx } = await import("@/lib/engine/parsers/xlsx");
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Transactions");
+    ws.addRow(["Date", "Description", "Withdrawals", "Deposits"]);
+    ws.addRow([new Date(Date.UTC(2026, 9, 2)), "STAPLES STORE 112", 63.27, null]);
+    ws.addRow([new Date(Date.UTC(2026, 9, 3)), "CLIENT DEPOSIT", null, 1500]);
+    const buf = Buffer.from(await wb.xlsx.writeBuffer());
+    const r = await parseXlsx(buf, "BUSINESS_CHEQUING");
+    expect(r.transactions.map((t) => [isoDate(t.date), t.amountCents])).toEqual([["2026-10-02", -6327], ["2026-10-03", 150000]]);
+  });
+});
