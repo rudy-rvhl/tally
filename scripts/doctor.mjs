@@ -8,7 +8,9 @@
  * port, and the exact next step.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import path from "node:path";
 
 const FIX = process.argv.includes("--fix");
 const ok = (m) => console.log(`  ✓ ${m}`);
@@ -16,6 +18,26 @@ const bad = (m) => console.log(`  ✗ ${m}`);
 const info = (m) => console.log(`    ${m}`);
 const has = (cmd) => spawnSync(process.platform === "win32" ? "where" : "which", [cmd]).status === 0;
 const run = (cmd, args, opts = {}) => spawnSync(cmd, args, { encoding: "utf8", ...opts });
+
+/** psql is often installed but not on the PATH (Postgres.app, Homebrew postgresql@16). Look in the usual places. */
+function findPsql() {
+  if (has("psql")) return "psql";
+  const globs = [
+    ["/Applications/Postgres.app/Contents/Versions", "bin/psql"],
+    ["/opt/homebrew/opt", "bin/psql", /^(postgresql|libpq)/],
+    ["/usr/local/opt", "bin/psql", /^(postgresql|libpq)/],
+    ["/usr/lib/postgresql", "bin/psql"],
+    ["C:\\Program Files\\PostgreSQL", "bin\\psql.exe"],
+  ];
+  for (const [dir, rel, re] of globs) {
+    if (!existsSync(dir)) continue;
+    const subs = readdirSync(dir).filter((d) => !re || re.test(d)).sort().reverse();
+    for (const sub of subs) { const p = path.join(dir, sub, rel); if (existsSync(p)) return p; }
+  }
+  for (const p of ["/opt/homebrew/bin/psql", "/usr/local/bin/psql"]) if (existsSync(p)) return p;
+  return null;
+}
+const PSQL = findPsql();
 
 console.log("\nLedgerIQ checkup\n");
 
@@ -37,8 +59,16 @@ const conn = { user: decodeURIComponent(u.username), password: decodeURIComponen
 ok(`.env found. Database: ${conn.user}@${conn.host}:${conn.port}/${conn.db}`);
 
 const key = envFile.ENCRYPTION_KEY;
-if (!key) bad("ENCRYPTION_KEY is empty in .env. Imports won't save until it's set (see .env.example).");
-else if (Buffer.from(key, "base64").length !== 32) bad("ENCRYPTION_KEY isn't a valid 32-byte key (see .env.example).");
+if (!key) {
+  if (FIX) {
+    // Only ever fill an EMPTY key: replacing a key would make previously stored files unreadable.
+    const k = randomBytes(32).toString("base64");
+    let text = readFileSync(".env", "utf8");
+    text = /^\s*ENCRYPTION_KEY=.*$/m.test(text) ? text.replace(/^\s*ENCRYPTION_KEY=.*$/m, `ENCRYPTION_KEY="${k}"`) : `${text.replace(/\n?$/, "\n")}ENCRYPTION_KEY="${k}"\n`;
+    writeFileSync(".env", text);
+    ok("ENCRYPTION_KEY was empty, so a new one was created in .env. Keep a copy somewhere safe.");
+  } else bad("ENCRYPTION_KEY is empty in .env. Imports won't save until it's set. Fix: npm run doctor -- --fix");
+} else if (Buffer.from(key, "base64").length !== 32) bad("ENCRYPTION_KEY isn't a valid 32-byte key (see .env.example).");
 else ok("ENCRYPTION_KEY is set.");
 
 // 2. Who is listening on the port?
@@ -51,14 +81,16 @@ if (has("lsof")) {
 }
 
 // 3. Try to connect with the app's credentials and show PostgreSQL's own message.
-if (!has("psql")) {
-  bad("psql isn't installed, so the raw database error can't be shown. With Postgres.app, add its bin folder to PATH; with Homebrew: brew install libpq.");
+if (!PSQL) {
+  bad("Couldn't find psql (PostgreSQL's command-line tool), so the database can't be checked.");
+  info("Install it with Homebrew: brew install libpq   (or reinstall Postgres.app), then run this again.");
 } else {
+  if (PSQL !== "psql") ok(`Using psql at ${PSQL}`);
   const env = { ...process.env, PGPASSWORD: conn.password, PGCONNECT_TIMEOUT: "5" };
-  const test = run("psql", ["-h", conn.host, "-p", conn.port, "-U", conn.user, "-d", conn.db, "-tAc", "select current_user"], { env });
+  const test = run(PSQL, ["-h", conn.host, "-p", conn.port, "-U", conn.user, "-d", conn.db, "-tAc", "select current_user"], { env });
   if (test.status === 0) {
     ok(`Connected as ${test.stdout.trim()}.`);
-    const t = run("psql", ["-h", conn.host, "-p", conn.port, "-U", conn.user, "-d", conn.db, "-tAc", "select count(*) from information_schema.tables where table_name='Session'"], { env });
+    const t = run(PSQL, ["-h", conn.host, "-p", conn.port, "-U", conn.user, "-d", conn.db, "-tAc", "select count(*) from information_schema.tables where table_name='Session'"], { env });
     if (t.stdout?.trim() === "1") ok("Tables exist.");
     else { bad("The tables haven't been created."); info("Fix: npx prisma migrate deploy"); if (FIX) execFileSync("npx", ["prisma", "migrate", "deploy"], { stdio: "inherit" }); }
   } else {
@@ -74,8 +106,8 @@ if (!has("psql")) {
         // As your own (administrator) account: try the local socket first (how Postgres.app/Homebrew trust you), then TCP.
         const local = ["localhost", "127.0.0.1", "::1"].includes(conn.host);
         const admin = (sql, db = "postgres") => {
-          const viaSocket = local ? run("psql", ["-p", conn.port, "-d", db, "-v", "ON_ERROR_STOP=1", "-tAc", sql]) : null;
-          return viaSocket && viaSocket.status === 0 ? viaSocket : run("psql", ["-h", conn.host, "-p", conn.port, "-d", db, "-v", "ON_ERROR_STOP=1", "-tAc", sql]);
+          const viaSocket = local ? run(PSQL, ["-p", conn.port, "-d", db, "-v", "ON_ERROR_STOP=1", "-tAc", sql]) : null;
+          return viaSocket && viaSocket.status === 0 ? viaSocket : run(PSQL, ["-h", conn.host, "-p", conn.port, "-d", db, "-v", "ON_ERROR_STOP=1", "-tAc", sql]);
         };
         const pw = conn.password.replace(/'/g, "''");
         let r = admin(`DO $$BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='${conn.user}') THEN CREATE ROLE "${conn.user}" LOGIN PASSWORD '${pw}' CREATEDB; ELSE ALTER ROLE "${conn.user}" LOGIN PASSWORD '${pw}'; END IF; END$$;`);
