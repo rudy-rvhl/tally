@@ -6,7 +6,7 @@
  * (src/lib/services/ask.ts) from the structured spec, and the answer links to the
  * exact transactions it summed.
  */
-import { z } from "zod";
+import { z } from "zod/v4";
 import { addMonths, isoDate, monthKey, monthRange } from "./dates";
 
 export const QuerySpecSchema = z.object({
