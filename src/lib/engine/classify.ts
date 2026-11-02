@@ -59,24 +59,27 @@ export function detectKind(description: string, amountCents: number, accountType
   // Credit card payments: inflow on a card, or outflow on a bank account naming a card.
   if (liability && inflow && has(d, /\b(PAYMENT|PAIEMENT|PMT|THANK YOU|MERCI|PAYMENT RECEIVED)\b/))
     return { kind: "CARD_PAYMENT", confidence: 0.95 };
-  if (!liability && !inflow && has(d, /\b(VISA|MASTERCARD|MASTER CARD|AMEX|AMERICAN EXPRESS|CREDIT CARD|CARTE DE CREDIT|MC PAYMENT|CARD PAYMENT)\b/) &&
-      has(d, /\b(PAYMENT|PMT|PAIEMENT|PYMT|BILL)\b|PAY\b|TO\b/))
+  if (!liability && !inflow && has(d, /\b(VISA|MASTERCARD|MASTER CARD|AMEX|AMERICAN EXPRESS|AMERICAN EXP|CREDIT CARD|CARTE DE CREDIT|MC PAYMENT|CARD PAYMENT)\b/) &&
+      has(d, /\b(PAYMENT|PMT|PAIEMENT|PYMT|BILL|FACTURE)\b|PAY\b|TO\b/))
     return { kind: "CARD_PAYMENT", confidence: 0.9 };
 
-  if (has(d, /\b(MORTGAGE|HYPOTHEQUE|LOAN PAYMENT|LOAN PMT|PRET|LOC PAYMENT|LINE OF CREDIT PAYMENT)\b/)) {
+  if (has(d, /\b(MORTGAGE|HYPOTHEQUE|HYPOTHECAIRE|LOAN PAYMENT|LOAN PMT|PRET|LOC PAYMENT|LINE OF CREDIT PAYMENT|VIREMENT-REMBOURSEMENT|REMBOURSEMENT AUTOMATIQUE)\b|\bA PR \d/)) {
     if (liability && inflow) return { kind: "LOAN_PAYMENT", confidence: 0.85 };
     if (!inflow) return { kind: "LOAN_PAYMENT", confidence: 0.85 };
   }
 
-  if (has(d, /\b(TRANSFER|TFR|XFER|VIREMENT|TRSF)\b/) && !has(d, /\b(E-?TRANSFER|INTERAC E|VIREMENT INTERAC)\b/))
+  if (has(d, /\b(TRANSFER|TFR|XFER|VIREMENT|TRSF)\b/) && !has(d, /\b(E-?TRANSFER|INTERAC E|VIREMENT INTERAC)\b/) && !has(d, /\bANNULATION\b/))
     return { kind: "TRANSFER", confidence: 0.85 };
+  // Interac e-transfers: received ones are money in (e.g. rent, customer payments); sent ones need a look.
+  if (inflow && has(d, /\b(VIREMENT INTERAC DE|E-?TRANSFER (FROM|RECEIVED|AUTODEPOSIT)|INTERAC E-?TRANSFER (FROM|RECEIVED|AUTODEPOSIT)|AUTODEPOSIT)\b/))
+    return { kind: "INCOME", confidence: 0.85 };
   if (has(d, /\b(E-?TRANSFER|INTERAC E|VIREMENT INTERAC)\b/))
     return inflow ? { kind: "INCOME", confidence: 0.5 } : { kind: "PURCHASE", confidence: 0.5 };
 
   if (inflow) {
     if (has(d, /\b(REFUND|RETURN|REMBOURSEMENT|REMB|CREDIT VOUCHER|RETOUR)\b/)) return { kind: "REFUND", confidence: 0.9 };
     if (liability) return { kind: "REFUND", confidence: 0.65 };
-    if (has(d, /\b(DEPOSIT|DEPOT|PAYROLL|PAIE|SALARY|STRIPE|SQUARE|SHOPIFY PAYOUT|PAYOUT|INVOICE|MOBILE DEP)\b/))
+    if (has(d, /\b(DEPOSIT|DEPOT|PAYROLL|PAIE|SALARY|STRIPE|SQUARE|SHOPIFY PAYOUT|PAYOUT|INVOICE|MOBILE DEP|DEPOT MOBILE)\b/))
       return { kind: "INCOME", confidence: 0.85 };
     return { kind: "INCOME", confidence: 0.6 };
   }

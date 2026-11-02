@@ -71,7 +71,7 @@ export const txnInclude = {
   account: { select: { id: true, name: true, institution: true, type: true, currency: true, mask: true, ownership: true } },
   merchant: { select: { id: true, name: true } },
   category: { select: { id: true, name: true, parent: { select: { id: true, name: true } } } },
-  splits: { include: { category: { select: { id: true, name: true, parent: { select: { id: true, name: true } } } } } },
+  splits: { include: { category: { select: { id: true, name: true, kind: true, parent: { select: { id: true, name: true } } } } } },
 } satisfies Prisma.TransactionInclude;
 
 export type TxnRow = Prisma.TransactionGetPayload<{ include: typeof txnInclude }>;
@@ -123,7 +123,10 @@ export async function loadAnalytic(user: Pick<User, "id" | "baseCurrency">, f: F
     if (t.splits.length) {
       for (const s of t.splits) {
         if (catFilter && !catFilter.has(s.categoryId)) continue;
-        out.push({ ...base, amountCents: Math.round(s.amountCents * rate), categoryId: s.categoryId, ...catNames(s.category as TxnRow["category"]) });
+        // A part of a loan payment or transfer filed under an expense category (e.g. the interest
+        // portion of a mortgage payment) is real spending; the rest stays money movement.
+        const kind = MOVE_KINDS.includes(t.kind) && s.category.kind === "EXPENSE" ? (t.kind === "LOAN_PAYMENT" ? "INTEREST" : "PURCHASE") : t.kind;
+        out.push({ ...base, kind, amountCents: Math.round(s.amountCents * rate), categoryId: s.categoryId, ...catNames(s.category as TxnRow["category"]) });
       }
     } else {
       out.push({ ...base, amountCents: Math.round(t.amountCents * rate), categoryId: t.categoryId, ...catNames(t.category) });

@@ -20,13 +20,13 @@ export function detectFileKind(name: string, head: Buffer): FileKind {
   return "UNKNOWN";
 }
 
-export async function parseStatement(name: string, buf: Buffer, accountType: AccountTypeName, mapping?: ColumnMapping): Promise<ParseResult & { fileKind: FileKind }> {
+export async function parseStatement(name: string, buf: Buffer, accountType: AccountTypeName, mapping?: ColumnMapping, section?: number): Promise<ParseResult & { fileKind: FileKind }> {
   const kind = detectFileKind(name, buf);
   switch (kind) {
     case "CSV": return { ...parseCsv(buf.toString("utf8"), accountType, mapping), fileKind: kind };
     case "OFX": case "QFX": return { ...parseOfx(buf.toString("latin1"), accountType), fileKind: kind };
     case "XLSX": return { ...(await parseXlsx(buf, accountType, mapping)), fileKind: kind };
-    case "PDF": return { ...(await parsePdf(buf, accountType)), fileKind: kind };
+    case "PDF": return { ...(await parsePdf(buf, accountType, { section })), fileKind: kind };
     default:
       return { fileKind: kind, parser: "NONE", institution: null, currency: null, accountHint: null, periodStart: null, periodEnd: null,
         openingBalanceCents: null, closingBalanceCents: null, transactions: [],

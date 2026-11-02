@@ -39,3 +39,14 @@ describe("category classification priority", () => {
     expect(classifyCategory({ description: "PAYMENT", merchantName: "x", kind: "CARD_PAYMENT", accountId: "a" }, base).categoryId).toBe("ccp");
   });
 });
+
+describe("Desjardins wording", () => {
+  it("classifies common Desjardins transaction descriptions", () => {
+    expect(detectKind("Virement Interac de / MARIE TREMBLAY/", 135000, "BUSINESS_CHEQUING")).toEqual({ kind: "INCOME", confidence: 0.85 });
+    expect(detectKind("Paiement facture - AccèsD Internet / AMERICAN EXP CARD", -131551, "BUSINESS_CHEQUING").kind).toBe("CARD_PAYMENT");
+    expect(detectKind("Virement-remboursement / à PR 1", -3403508, "BUSINESS_CHEQUING").kind).toBe("LOAN_PAYMENT");
+    expect(detectKind("Annulation - Virement Interac à / JEAN ROY/", 113500, "BUSINESS_CHEQUING").kind).toBe("REVERSAL");
+    expect(detectKind("Dépôt Mobile", 166000, "BUSINESS_CHEQUING").kind).toBe("INCOME");
+    expect(detectKind("Frais fixes d'utilisation", -595, "BUSINESS_CHEQUING").kind).toBe("FEE");
+  });
+});

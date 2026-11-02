@@ -36,6 +36,10 @@ export interface ParseResult {
   /** Columns detected for CSV/XLSX so the user can correct the mapping. */
   mapping?: ColumnMapping;
   headers?: string[];
+  /** Statements covering several accounts: the sections found (one is imported at a time). */
+  sections?: { index: number; name: string; transactions: number }[];
+  /** Loan payments broken into interest and principal, from a loan section of the statement. */
+  loanPayments?: { date: Date; interestCents: number; principalCents: number; loan: string }[];
 }
 
 export interface ColumnMapping {

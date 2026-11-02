@@ -26,4 +26,5 @@ Regenerate them with `python3 samples/pdf/generate.py` (needs `reportlab`, plus 
 | `credit-card-dec-jan.pdf` | Card with transaction and posting dates, `CR` and trailing-minus credits, Dec → Jan period |
 | `amex-style.pdf` | Single Amount column, minus-sign credits, reference lines |
 | `desjardins-francais.pdf` | French: RETRAIT / DÉPÔT / SOLDE, "02 OCT" dates, "1 234,56" amounts |
+| `desjardins-multicomptes.pdf` | Desjardins business layout: code column, Frais / Retrait / Dépôt / Solde, a row whose amount is on its second line, page break with "(SUITE)", a second account section, and a mortgage section with Intérêt / Remboursement columns |
 | `scanned-chequing.pdf` | Image-only (scanned) copy of the chequing statement, slightly tilted |

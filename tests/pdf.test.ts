@@ -101,3 +101,39 @@ describe("PDF dates", () => {
     expect(isoDate(resolveYear({ m: 1, d: 5 }, period)!)).toBe("2026-01-05");
   });
 });
+
+describe("Desjardins business statement with several accounts", () => {
+  it("imports the operating account, joins two-line rows, drops codes, reads 'du 1er … au …'", async () => {
+    const r = await parsePdf(pdf("desjardins-multicomptes.pdf"), "BUSINESS_CHEQUING");
+    expect(r.institution).toBe("Desjardins");
+    expect(r.accountHint).toBe("3456"); // folio printed under its label
+    expect([isoDate(r.periodStart!), isoDate(r.periodEnd!)]).toEqual(["2026-10-01", "2026-10-31"]);
+    expect(rows(r)).toEqual([
+      ["2026-10-01", 125000, "Virement Interac de / LOCATAIRE UN /"],
+      ["2026-10-01", 110000, "Virement Interac de / LOCATAIRE DEUX/"],
+      ["2026-10-01", -84530, "Paiement facture - AccèsD Internet / AMERICAN EXP CARD"],
+      ["2026-10-03", -60000, "Virement Interac à / ENTREPRENEUR ABC/"],
+      ["2026-10-03", 60000, "Annulation - Virement Interac à / ENTREPRENEUR ABC/"],
+      ["2026-10-07", 97500, "Dépôt Mobile"],
+      ["2026-10-16", -420000, "Virement-remboursement / à PR 1"],
+      ["2026-10-20", -31245, "Paiement facture - AccèsD Internet / HYDRO-QUEBEC"],
+      ["2026-10-30", -595, "Frais fixes d'utilisation"],
+    ]);
+    expect([r.openingBalanceCents, r.closingBalanceCents]).toEqual([2000000, 1796130]);
+    expect(balances("BUSINESS_CHEQUING", r).balanced).toBe(true);
+  });
+
+  it("lists the other account section and can import it instead", async () => {
+    const r = await parsePdf(pdf("desjardins-multicomptes.pdf"), "BUSINESS_CHEQUING");
+    expect(r.sections?.map((s) => [s.name, s.transactions])).toEqual([["EOP EPARGNE AVEC OPERATIONS (C)", 9], ["COMPTE D'EPARGNE ET DE PLACEMENT", 1]]);
+    const cs = await parsePdf(pdf("desjardins-multicomptes.pdf"), "PERSONAL_SAVINGS", { section: r.sections![1].index });
+    expect(rows(cs)).toEqual([["2026-10-31", 5, "Intérêts"]]);
+    expect([cs.openingBalanceCents, cs.closingBalanceCents]).toEqual([500, 505]);
+  });
+
+  it("reads the mortgage section's interest / principal split instead of importing it", async () => {
+    const r = await parsePdf(pdf("desjardins-multicomptes.pdf"), "BUSINESS_CHEQUING");
+    expect(r.loanPayments).toEqual([{ date: new Date("2026-10-16T00:00:00Z"), interestCents: 346000, principalCents: 74000, loan: "PR 1 PRET HYPOTHECAIRE (MULTILOGEMENTS)" }]);
+    expect(r.transactions.some((t) => /Remboursement automatique/.test(t.description))).toBe(false);
+  });
+});

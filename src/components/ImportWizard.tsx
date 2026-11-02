@@ -27,22 +27,25 @@ export function ImportWizard({ accounts, categories, initialAccount, accountant 
   const [result, setResult] = useState<CommitResult | null>(null);
   const [onlyAttention, setOnlyAttention] = useState(false);
   const [drag, setDrag] = useState(false);
+  const [section, setSection] = useState<number | undefined>(undefined);
   const input = useRef<HTMLInputElement>(null);
   const account = accounts.find((a) => a.id === accountId);
   const cur = account?.currency ?? "CAD";
 
-  async function runPreview(f: File, m?: ColumnMapping) {
+  async function runPreview(f: File, m?: ColumnMapping, sec?: number) {
     if (!accountId) { setError("First choose which account this statement belongs to."); return; }
     setBusy("preview"); setError(""); setResult(null);
     const fd = new FormData();
     fd.set("file", f); fd.set("accountId", accountId);
     if (m) fd.set("mapping", JSON.stringify(m));
+    if (sec !== undefined) fd.set("section", String(sec));
     try {
       const res = await fetch("/api/import/preview", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       const p = data as ImportPreview;
       setPreview(p); setMapping(p.mapping); setDecisions({}); setReimport(new Set());
+      setSection(p.sections?.length ? (sec ?? p.sections.reduce((a, b) => (b.transactions > a.transactions ? b : a)).index) : undefined);
       setPeriod({ start: p.periodStart ?? "", end: p.periodEnd ?? "", opening: p.openingBalanceCents !== null ? (p.openingBalanceCents / 100).toFixed(2) : "", closing: p.closingBalanceCents !== null ? (p.closingBalanceCents / 100).toFixed(2) : "" });
       setOnlyAttention(p.counts.needsAttention > 0 && p.rows.length > 30);
     } catch (e) {
@@ -54,6 +57,7 @@ export function ImportWizard({ accounts, categories, initialAccount, accountant 
   function pick(f: File | undefined | null) {
     if (!f) return;
     setFile(f);
+    setSection(undefined);
     void runPreview(f);
   }
 
@@ -63,7 +67,7 @@ export function ImportWizard({ accounts, categories, initialAccount, accountant 
     const fd = new FormData();
     fd.set("file", file); fd.set("accountId", accountId);
     fd.set("payload", JSON.stringify({
-      decisions, includeAlreadyImported: [...reimport], mapping,
+      decisions, includeAlreadyImported: [...reimport], mapping, section: section ?? null,
       periodStart: period.start || null, periodEnd: period.end || null,
       openingBalanceCents: period.opening ? parseAmountToCents(period.opening) : null,
       closingBalanceCents: period.closing ? parseAmountToCents(period.closing) : null,
@@ -177,6 +181,25 @@ export function ImportWizard({ accounts, categories, initialAccount, accountant 
                 <div className="rounded-xl bg-slate-50 px-3 py-2"><div className="text-xs text-slate-500">Money in</div><div className="num font-bold text-emerald-700">{formatMoney(totals.in, cur)}</div></div>
               </div>
             </div>
+            {preview.sections && preview.sections.length > 1 && (
+              <div className="mt-4 rounded-xl border border-brand-200 bg-brand-50/60 p-4">
+                <label htmlFor="section" className="label">This statement covers several accounts. Which one are you importing into {account?.label}?</label>
+                <select id="section" className="input max-w-md" value={section ?? ""} onChange={(e) => { const v = Number(e.target.value); setSection(v); if (file) void runPreview(file, mapping, v); }}>
+                  {preview.sections.map((x) => <option key={x.index} value={x.index}>{x.name} ({x.transactions} transactions)</option>)}
+                </select>
+                <p className="mt-1.5 text-xs text-slate-500">Import the statement again into another account to bring in the others.</p>
+              </div>
+            )}
+            {preview.loanSplits.length > 0 && (
+              <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                {preview.loanSplits.map((l) => (
+                  <p key={l.date + l.loan}>
+                    Loan payment on {new Date(`${l.date}T00:00:00Z`).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "UTC" })}: <strong>{formatMoney(l.interestCents, cur)} interest</strong> and {formatMoney(l.principalCents, cur)} principal ({l.loan}).
+                  </p>
+                ))}
+                <p className="mt-1 text-xs">We&apos;ll split it automatically so the interest counts as a business expense and the principal as paying down the loan. You can change this later.</p>
+              </div>
+            )}
             {preview.alreadyUploaded && <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">You uploaded this exact file on {new Date(preview.alreadyUploaded.at).toLocaleDateString("en-CA")}. Transactions already imported will be skipped, so nothing is counted twice.</div>}
             {[...preview.accountWarnings, ...preview.notes].map((n) => (
               <div key={n} className={clsx("mt-3 flex items-start gap-2 rounded-xl px-4 py-3 text-sm", preview.accountWarnings.includes(n) ? "border border-amber-200 bg-amber-50 text-amber-900" : "bg-slate-50 text-slate-700")}>

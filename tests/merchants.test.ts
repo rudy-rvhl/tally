@@ -34,3 +34,10 @@ describe("merchant consolidation", () => {
     expect(m.confidence).toBeLessThan(0.7);
   });
 });
+
+describe("Desjardins payee names", () => {
+  it("finds the person or payee in Interac and bill-payment wording", () => {
+    expect(identifyMerchant("Virement Interac de / MARIE TREMBLAY/").name).toBe("Marie Tremblay");
+    expect(identifyMerchant("Paiement facture - AccèsD Internet / HYDRO-QUEBEC").name).toBe("Hydro-Québec");
+  });
+});

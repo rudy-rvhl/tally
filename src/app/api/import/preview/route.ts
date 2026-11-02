@@ -16,7 +16,9 @@ export async function POST(req: Request) {
   let mapping: ColumnMapping | undefined;
   try { mapping = form.get("mapping") ? (JSON.parse(String(form.get("mapping"))) as ColumnMapping) : undefined; } catch { mapping = undefined; }
   try {
-    const preview = await previewImport(user.id, accountId, file.name, Buffer.from(await file.arrayBuffer()), mapping);
+    const sectionRaw = form.get("section");
+    const section = sectionRaw !== null && sectionRaw !== "" && Number.isInteger(Number(sectionRaw)) ? Number(sectionRaw) : undefined;
+    const preview = await previewImport(user.id, accountId, file.name, Buffer.from(await file.arrayBuffer()), mapping, section);
     return NextResponse.json(preview);
   } catch (e) {
     log("warn", "import.preview.failed", { userId: user.id, error: (e as Error).name });

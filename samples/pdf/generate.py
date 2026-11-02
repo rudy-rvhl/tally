@@ -133,6 +133,67 @@ def desjardins_fr():
         c.drawRightString(560, y, money(bal, True))
     c.save()
 
+def desjardins_multi():
+    """Desjardins business layout: code column, Frais/Retrait/Dépôt/Solde, a row whose amount is on its
+    second line, page break with (SUITE), a second account section, and a mortgage (PRET) section."""
+    c = canvas.Canvas(str(OUT / "desjardins-multicomptes.pdf"), pagesize=letter)
+    X = dict(date=40, code=75, desc=110, frais=355, retrait=425, depot=495, solde=572)
+    def letterhead(page):
+        c.setFont("Helvetica", 8)
+        for i, t in enumerate(["CAISSE DESJARDINS", "DES ENTREPRENEURS", "1000 RUE EXEMPLE", "MONTREAL, QC"]): c.drawString(70, H - 40 - i * 10, t)
+        c.drawString(430, H - 50, "Pour la période"); c.drawString(400, H - 62, "du 1er octobre au 31 octobre 2026")
+        c.drawString(330, H - 74, "Folio"); c.drawString(430, H - 86, "123456"); c.drawString(500, H - 86, f"Page {page} de 2")
+        c.setFont("Helvetica-Bold", 9); c.drawCentredString(W / 2, H - 110, "RELEVÉ DE COMPTE")
+        c.setFont("Helvetica", 8); c.drawString(60, H - 135, "EXEMPLE IMMOBILIER INC.")
+    def header(y, title):
+        c.setFont("Helvetica-Bold", 8); c.drawCentredString(W / 2 + 40, y + 12, title)
+        c.drawString(X["date"], y, "Date"); c.drawString(X["code"], y, "Code"); c.drawString(X["desc"] + 60, y, "Description")
+        c.drawRightString(X["frais"], y, "Frais"); c.drawRightString(X["retrait"], y, "Retrait"); c.drawRightString(X["depot"], y, "Dépôt"); c.drawRightString(X["solde"], y, "Solde")
+        c.setFont("Helvetica", 8)
+    def fr(v): return f"{v:,.2f}".replace(",", " ")
+    bal = 20000.00
+    def row(y, d, code, desc, kind=None, amt=None, wrap=None):
+        nonlocal bal
+        c.drawString(X["date"], y, d); c.drawString(X["code"], y, code); c.drawString(X["desc"], y, desc)
+        if wrap:  # amount printed on the second line
+            y -= 10; c.drawString(X["desc"], y, wrap)
+        if kind:
+            bal = round(bal + (amt if kind == "depot" else -amt), 2)
+            c.drawRightString(X[kind], y, fr(amt)); c.drawRightString(X["solde"], y, fr(bal))
+        return y - 12
+    letterhead(1)
+    y = H - 175; header(y, "EOP EPARGNE AVEC OPERATIONS (C)"); y -= 12
+    c.drawString(X["desc"] + 5, y, "Solde reporté"); c.drawRightString(X["solde"], y, fr(bal)); y -= 12
+    y = row(y, " 1 OCT", "VRW", "Virement Interac de / LOCATAIRE UN /", "depot", 1250.00)
+    y = row(y, " 1 OCT", "VRW", "Virement Interac de / LOCATAIRE DEUX/", "depot", 1100.00)
+    y = row(y, " 1 OCT", "PWW", "Paiement facture - AccèsD Internet / AMERICAN EXP", "retrait", 845.30, wrap="CARD")
+    y = row(y, " 3 OCT", "VNW", "Virement Interac à / ENTREPRENEUR ABC/", "retrait", 600.00)
+    y = row(y, " 3 OCT", "VNW", "Annulation - Virement Interac à / ENTREPRENEUR ABC/", "depot", 600.00)
+    y = row(y, " 7 OCT", "DMD", "Dépôt Mobile", "depot", 975.00)
+    c.showPage(); letterhead(2)
+    y = H - 175; header(y, "EOP EPARGNE AVEC OPERATIONS (C) (SUITE)"); y -= 12
+    y = row(y, "16 OCT", "VAP", "Virement-remboursement / à PR 1", "retrait", 4200.00)
+    y = row(y, "20 OCT", "PWW", "Paiement facture - AccèsD Internet / HYDRO-QUEBEC", "retrait", 312.45)
+    y = row(y, "30 OCT", "FIX", "Frais fixes d'utilisation", "frais", 5.95)
+    eop_close = bal
+    # second account section
+    y -= 14; header(y, "COMPTE D'EPARGNE ET DE PLACEMENT"); y -= 12
+    c.drawString(X["date"], y, "CS"); c.drawString(X["code"] + 20, y, "PART DE QUALIFICATION (A)"); y -= 12
+    bal = 5.00; c.drawString(X["desc"] + 5, y, "Solde reporté"); c.drawRightString(X["solde"], y, fr(bal)); y -= 12
+    y = row(y, "31 OCT", "INT", "Intérêts", "depot", 0.05)
+    # mortgage section
+    y -= 14; c.setFont("Helvetica-Bold", 8); c.drawCentredString(W / 2 + 40, y + 12, "PRET")
+    c.drawString(X["date"], y, "Date"); c.drawString(X["code"], y, "Code"); c.drawString(X["desc"] + 60, y, "Description")
+    c.drawRightString(X["frais"], y, "Intérêt"); c.drawRightString(X["retrait"] + 15, y, "Capital versé"); c.drawRightString(X["depot"] + 15, y, "Remboursement"); c.drawRightString(X["solde"], y, "Solde")
+    c.setFont("Helvetica", 8); y -= 12
+    c.drawString(X["date"], y, "PR 1"); c.drawString(X["code"] + 20, y, "PRET HYPOTHECAIRE (MULTILOGEMENTS)"); y -= 12
+    c.drawString(X["desc"] + 5, y, "Solde reporté"); c.drawRightString(X["solde"], y, fr(1200000.00)); y -= 12
+    c.drawString(X["date"], y, "16 OCT"); c.drawString(X["code"], y, "CT"); c.drawString(X["desc"], y, "Remboursement automatique / de EOP: 4 200.00 $")
+    c.drawRightString(X["frais"], y, fr(3460.00)); c.drawRightString(X["depot"] + 15, y, fr(740.00)); c.drawRightString(X["solde"], y, fr(1199260.00)); y -= 12
+    c.drawString(X["desc"] - 50, y, "Date d'échéance du terme: 7 octobre 2030    Taux d'intérêt en vigueur: 3.460 % l'an")
+    c.save()
+    assert abs(eop_close - 17961.30) < 0.001, eop_close
+
 def scanned():
     """Image-only copy of the chequing statement, like a scan: rendered with pdftoppm, slightly rotated."""
     import shutil, subprocess, tempfile
@@ -145,5 +206,5 @@ def scanned():
         pages[0].save(OUT / "scanned-chequing.pdf", save_all=True, append_images=pages[1:], resolution=150)
 
 if __name__ == "__main__":
-    chequing(); card(); amex(); desjardins_fr(); scanned()
+    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned()
     print("generated", sorted(p.name for p in OUT.glob("*.pdf")))

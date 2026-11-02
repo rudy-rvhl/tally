@@ -274,6 +274,20 @@ await go(`${BASE}/accounts/${scanId}`);
 check(await page.isVisible("text=Matches your statement"), "scanned statement reconciles to the cent");
 await shot("16-account-scanned");
 
+// 11d. Desjardins business statement: several accounts + mortgage interest split
+const multiId = await importPdf({ institution: "Desjardins", name: "Compte d'opérations", type: "BUSINESS_CHEQUING", mask: "3456" }, "desjardins-multicomptes.pdf", 9);
+check(await page.isVisible("text=This statement covers several accounts"), "multi-account statement offers a section picker");
+check(await page.isVisible("text=/\\$3,460.00 interest/"), "preview shows the mortgage interest / principal split");
+await shot("17-import-desjardins-multi");
+await commit();
+await go(`${BASE}/transactions?account=${multiId}&month=2026-10`);
+const multiSpent = money(await page.locator("div.card.px-4:has-text('Money spent')").first().textContent());
+check(Math.abs(multiSpent - 3778.40) < 0.005, `mortgage interest counted as an expense, principal and card payment not (spent ${multiSpent}, expected 3778.40)`);
+await go(`${BASE}/review`);
+check(await page.isVisible("text=/loan payment was \\$3,460.00 of interest and \\$740.00 of principal/"), "review explains the automatic loan split");
+await go(`${BASE}/accounts/${multiId}`);
+check(await page.isVisible("text=Matches your statement"), "Desjardins statement reconciles");
+
 // 12. Export
 const resp = await page.request.get(`${BASE}/api/export?month=2026-10`);
 const csv = await resp.text();

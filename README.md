@@ -63,6 +63,12 @@ wrap onto a second line are joined, and every sign is checked against the printe
 The reader also picks up the statement period, the opening and closing balances, and the account's
 last four digits, so the statement can be reconciled straight after import.
 
+Statements that cover several accounts (common at Desjardins) are split into sections. The main
+account is imported, and the preview lets you choose another. Loan or mortgage sections aren't
+imported as transactions. Instead, their interest and principal columns are used to split the
+matching loan payment, so the interest counts as an expense and the principal as paying down the
+loan. The split is explained in Review and can be changed.
+
 Scanned (image-only) PDFs are rendered and read with Tesseract OCR, using English and French language
 data bundled in `node_modules`, so no network access is needed. They then go through the same reader,
 and the preview asks the user to confirm each amount. A two-page scan takes about 4 seconds. OCR is
