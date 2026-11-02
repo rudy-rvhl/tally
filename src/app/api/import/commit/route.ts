@@ -5,6 +5,7 @@ import { currentUser } from "@/lib/auth";
 import { commitImport, MAX_FILE_BYTES } from "@/lib/services/import";
 import type { ColumnMapping } from "@/lib/engine/types";
 import { log } from "@/lib/log";
+import { encryptionKeyProblem } from "@/lib/crypto";
 
 const Body = z.object({
   decisions: z.record(z.string(), z.object({
@@ -23,6 +24,8 @@ const Body = z.object({
 export async function POST(req: Request) {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
+  const keyProblem = encryptionKeyProblem();
+  if (keyProblem) return NextResponse.json({ error: `Nothing was saved. ${keyProblem}` }, { status: 500 });
   const form = await req.formData();
   const file = form.get("file");
   const accountId = String(form.get("accountId") ?? "");
@@ -40,7 +43,11 @@ export async function POST(req: Request) {
     revalidatePath("/", "layout");
     return NextResponse.json(result);
   } catch (e) {
-    log("error", "import.commit.failed", { userId: user.id, error: (e as Error).message.slice(0, 200) });
-    return NextResponse.json({ error: "The import didn't complete, and nothing was saved. Please try again." }, { status: 500 });
+    log("error", "import.commit.failed", { userId: user.id, error: (e as Error).message.slice(0, 500) });
+    const msg = (e as Error).message;
+    const reason = /database|connect|ECONNREFUSED|P10\d\d/i.test(msg) ? " The database couldn't be reached. Check that PostgreSQL is running."
+      : /Transaction already closed|timeout/i.test(msg) ? " Saving took too long. Try again, or import a shorter statement."
+      : " The terminal running the app shows the technical details (look for import.commit.failed).";
+    return NextResponse.json({ error: `The import didn't complete, and nothing was saved.${reason}` }, { status: 500 });
   }
 }

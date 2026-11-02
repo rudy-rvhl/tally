@@ -10,6 +10,14 @@ function key(): Buffer {
   return k;
 }
 
+/** Plain-language description of a missing or malformed key, or null when the key is fine. */
+export function encryptionKeyProblem(): string | null {
+  const raw = process.env.ENCRYPTION_KEY;
+  if (!raw) return "The server's ENCRYPTION_KEY isn't set in the .env file, so statements can't be stored securely. Add it (see .env.example) and restart the app.";
+  if (Buffer.from(raw, "base64").length !== 32) return "The server's ENCRYPTION_KEY in the .env file isn't a valid 32-byte key. Generate one with the command in .env.example and restart the app.";
+  return null;
+}
+
 /** Output layout: 12-byte IV | 16-byte tag | ciphertext */
 export function encrypt(plain: Buffer): Uint8Array<ArrayBuffer> {
   const iv = randomBytes(12);
