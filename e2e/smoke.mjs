@@ -23,7 +23,7 @@ const ctx = await browser.newContext({ viewport: { width: 1360, height: 900 } })
 const page = await ctx.newPage();
 page.on("response", (r) => { if (r.request().method() === "POST" && process.env.DEBUG) console.log("POST", r.url(), r.status()); });
 page.on("console", (m) => { if (process.env.DEBUG) console.log("console:", m.type(), m.text()); });
-page.on("pageerror", (e) => { console.log("PAGE ERROR", e.message); failures++; });
+page.on("pageerror", (e) => { console.log("PAGE ERROR", page.url(), e.message); failures++; });
 // Wait for hydration before interacting, like a real user would.
 const go = async (url) => { await page.goto(url); await page.waitForLoadState("networkidle"); };
 const shot = (name) => page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: true });
@@ -245,6 +245,34 @@ await page.click("button:has-text('Combine')");
 await page.waitForSelector("text=/Combined 1 supplier name/", { timeout: 15000 });
 await go(`${BASE}/transactions?q=STARBUCKS`);
 check((await page.locator("table tbody tr:has-text('Uber Eats')").count()) === 3, "combined supplier's transactions moved, nothing deleted");
+
+// 11c. PDF statements: a French text PDF and a scanned (image-only) PDF
+const pdfSample = (f) => path.join(here, "..", "samples", "pdf", f);
+async function importPdf(account, file, expectNew) {
+  const id = await addAccount(account);
+  await go(`${BASE}/import?account=${id}`);
+  await page.setInputFiles("input[type=file]", pdfSample(file));
+  await page.waitForSelector("text=Check what we found", { timeout: 120000 });
+  const chip = await page.textContent(".chip:has-text('new')");
+  check(money(chip) === expectNew, `${file}: preview finds ${expectNew} transactions (got "${chip}")`);
+  return id;
+}
+const desjId = await importPdf({ institution: "Desjardins", name: "Compte personnel", type: "PERSONAL_CHEQUING", ownership: "PERSONAL", mask: "4410" }, "desjardins-francais.pdf", 4);
+check(await page.isVisible("text=/recognised this as a Desjardins statement/"), "Desjardins PDF recognised");
+check(await page.isVisible("text=checked every amount against its running balance"), "PDF amounts verified against the running balance");
+await shot("14-import-pdf-preview");
+await commit();
+await go(`${BASE}/accounts/${desjId}`);
+check(await page.isVisible("text=Matches your statement"), "French PDF statement reconciles automatically");
+
+const scanId = await importPdf({ institution: "RBC Royal Bank", name: "Old Operating (scanned)", type: "BUSINESS_CHEQUING", mask: "4567" }, "scanned-chequing.pdf", 9);
+check(await page.isVisible("text=/scanned statement, so we read it with text recognition/"), "scanned PDF is read with OCR and says so");
+check(await page.isVisible("text=/J TREMBLAY DESIGN/") || (await page.locator("input[value*='TREMBLAY']").count()) > 0, "wrapped payee line joined from the scan");
+await shot("15-import-scanned-preview");
+await commit();
+await go(`${BASE}/accounts/${scanId}`);
+check(await page.isVisible("text=Matches your statement"), "scanned statement reconciles to the cent");
+await shot("16-account-scanned");
 
 // 12. Export
 const resp = await page.request.get(`${BASE}/api/export?month=2026-10`);

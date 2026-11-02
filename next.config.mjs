@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ["exceljs", "unpdf", "bcryptjs"],
+  serverExternalPackages: ["exceljs", "bcryptjs", "pdfjs-dist", "tesseract.js", "@napi-rs/canvas", "@tesseract.js-data/eng", "@tesseract.js-data/fra"],
   experimental: { serverActions: { bodySizeLimit: "15mb" } },
   async headers() {
     return [{
