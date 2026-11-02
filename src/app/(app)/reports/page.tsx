@@ -30,7 +30,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const prev = addMonths(month, -1);
   const period = PERIODS.find((p) => p.id === raw.period)?.id ?? "12";
   const n = period === "ytd" ? Number(month.slice(5)) : Number(period);
-  const months = lastNMonths(month, n);
+  const firstData = await prisma.transaction.findFirst({ where: { userId: user.id, excluded: false }, orderBy: { date: "asc" }, select: { date: true } });
+  const firstMonth = firstData ? monthKey(firstData.date) : month;
+  // Don't plot months before the first imported statement.
+  const months = lastNMonths(month, n).filter((m) => m >= firstMonth);
   const longMonths = lastNMonths(month, 24);
   const [cur, last, hist, reviewCount, cov, accounts, cats] = await Promise.all([
     loadAnalytic(user, { month }),
@@ -51,7 +54,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const incomeBySource = groupSpending(cur.txns.filter((t) => t.kind === "INCOME").map((t) => ({ ...t, kind: "PURCHASE" as const, amountCents: -t.amountCents })), byMerchant);
   const catHref = (name: string, m = month) => txnLink({}, { month: m, kind: "spending", category: cats.find((x) => x.name === name)?.id });
   const mHref = (key: string, label: string) => (key.startsWith("name:") ? txnLink({}, { month, q: label }) : `/spending/suppliers/${key}?month=${month}`);
-  const gaps = cov.filter((a) => a.cells[0].status !== "COMPLETE");
+  const gaps = cov.filter((a) => a.cells[0].status === "MISSING" || a.cells[0].status === "PARTIAL");
 
   // Trends
   const series = monthlySeries(hist.txns, months);
@@ -152,7 +155,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           {PERIODS.map((p) => <Link key={p.id} href={`/reports?month=${month}&period=${p.id}`} className={clsx("rounded-lg px-3 py-1.5 text-sm font-medium", period === p.id ? "bg-white shadow-sm" : "text-slate-600")}>{p.label}</Link>)}
         </div>
       </div>
-      {months.some((m) => m < (hist.txns[0] ? monthKey(hist.txns[0].date) : m)) && <div className="mb-4"><Notice tone="blue">Some months in this range have no imported data yet, so they show as zero.</Notice></div>}
+      {months.length < n && <div className="mb-4"><Notice tone="blue">Your statements start in {monthLabel(firstMonth)}, so this shows {months.length} month{months.length === 1 ? "" : "s"}. Import older statements to see longer trends.</Notice></div>}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card title="Monthly spending" subtitle="With the 3-month rolling average.">
           <TrendChart showIncome={false} data={series.map((p, i) => ({ label: monthLabel(p.month, "short"), spending: p.spendingCents, average: avg[i], href: `/reports?month=${p.month}&period=${period}` }))} />

@@ -2,12 +2,13 @@
 import Link from "next/link";
 import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { goTo } from "./navigate";
 import type { ActionState } from "@/app/actions";
 
 export function AuthForm({ mode, action }: { mode: "login" | "register"; action: (s: ActionState, f: FormData) => Promise<ActionState> }) {
   const [state, formAction, pending] = useActionState(action, {});
   const router = useRouter();
-  useEffect(() => { if (state.redirectTo) { router.push(state.redirectTo); router.refresh(); } }, [state, router]);
+  useEffect(() => { if (state.redirectTo) goTo(router, state.redirectTo); }, [state, router]);
   return (
     <form action={formAction} className="space-y-4">
       {mode === "register" && (

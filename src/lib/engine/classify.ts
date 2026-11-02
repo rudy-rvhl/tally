@@ -167,7 +167,7 @@ export function classifyCategory(
   for (const [re, path] of DESCRIPTION_PATTERNS) {
     if (re.test(hay)) {
       const id = ctx.pathToId(path);
-      if (id) return { categoryId: id, source: "PATTERN", confidence: 0.65 };
+      if (id) return { categoryId: id, source: "PATTERN", confidence: 0.72 };
     }
   }
   return { categoryId: ctx.pathToId("Other > Uncategorized"), source: "NONE", confidence: 0 };

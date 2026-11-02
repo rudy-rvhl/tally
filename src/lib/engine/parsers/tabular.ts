@@ -151,6 +151,7 @@ export function parseRows(rawRows: unknown[][], opts: TabularOptions): ParseResu
     result.institution = template.institution;
     if (template.mapping.dateOrder) mapping.dateOrder = template.mapping.dateOrder;
     if (template.mapping.amountSign) mapping.amountSign = template.mapping.amountSign;
+    if (template.mapping.amountSign === "INVERT") notes.push("This card statement lists purchases as positive numbers. We've treated them as money spent.");
   }
 
   if (opts.mapping) mapping = { ...opts.mapping };
@@ -218,8 +219,12 @@ export function parseRows(rawRows: unknown[][], opts: TabularOptions): ParseResu
 
   const dates = result.transactions.filter((t) => t.date.getTime() > 0).map((t) => t.date.getTime());
   if (dates.length) {
-    result.periodStart = new Date(Math.min(...dates));
-    result.periodEnd = new Date(Math.max(...dates));
+    // CSV/Excel exports rarely state their period. Assume whole calendar months, and say so;
+    // the user can change the period in the preview.
+    const min = new Date(Math.min(...dates)), max = new Date(Math.max(...dates));
+    result.periodStart = new Date(Date.UTC(min.getUTCFullYear(), min.getUTCMonth(), 1));
+    result.periodEnd = new Date(Date.UTC(max.getUTCFullYear(), max.getUTCMonth() + 1, 0));
+    notes.push("This file doesn't say which dates it covers, so we assumed whole months. Adjust the statement period below if it's different.");
   }
   return result;
 }

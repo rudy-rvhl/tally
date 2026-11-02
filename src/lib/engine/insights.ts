@@ -3,7 +3,7 @@
  * the transactions behind it, so the user can click through and verify.
  */
 import { formatMoney, formatPct, pctChange } from "./money";
-import { byCategory, byMerchant, compareGroups, groupSpending, summarize, type RecurringItem, type Anomaly } from "./analytics";
+import { bySubcategory, byMerchant, compareGroups, groupSpending, summarize, type RecurringItem, type Anomaly } from "./analytics";
 import { monthLabel } from "./dates";
 import type { AnalyticTxn } from "./types";
 import type { Filters } from "../filters";
@@ -19,10 +19,14 @@ export function explainMonth(current: AnalyticTxn[], previous: AnalyticTxn[], mo
   const delta = c.spendingCents - p.spendingCents;
   if (p.spendingCents > 0 && Math.abs(delta) >= 100) {
     const merchants = compareGroups(groupSpending(current, byMerchant), groupSpending(previous, byMerchant));
-    const cats = compareGroups(groupSpending(current, byCategory), groupSpending(previous, byCategory));
+    const cats = compareGroups(groupSpending(current, bySubcategory), groupSpending(previous, bySubcategory));
     const drivers = (delta > 0 ? merchants.filter((r) => r.changeCents > 0) : merchants.filter((r) => r.changeCents < 0)).slice(0, 2);
     const catDrivers = (delta > 0 ? cats.filter((r) => r.changeCents > 0) : cats.filter((r) => r.changeCents < 0)).slice(0, 1);
-    const names = [...drivers.map((d) => d.label), ...catDrivers.map((d) => d.label.toLowerCase())].filter((v, i, a) => a.indexOf(v) === i);
+    const catName = (label: string) => {
+      const sub = (label.split(" › ")[1] ?? label).toLowerCase();
+      return sub === "uncategorized" ? "uncategorized purchases" : sub;
+    };
+    const names = [...drivers.map((d) => d.label), ...catDrivers.map((d) => catName(d.label))].filter((v, i, a) => a.indexOf(v) === i);
     const why = names.length ? ` Most of the ${delta > 0 ? "increase" : "decrease"} came from ${list(names)}.` : "";
     out.push({
       text: `You spent ${formatMoney(Math.abs(delta), currency)} ${delta > 0 ? "more" : "less"} in ${cur} than in ${prev} (${formatPct(pctChange(c.spendingCents, p.spendingCents))}).${why}`,

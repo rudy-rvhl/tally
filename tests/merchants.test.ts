@@ -17,6 +17,13 @@ describe("merchant consolidation", () => {
     expect(cleanDescriptor("STARBUCKS #4412 MONTREAL QC")).toBe("STARBUCKS");
     expect(cleanDescriptor("POS PURCHASE TIM HORTONS #2231")).toBe("TIM HORTONS");
   });
+  it("strips Interac e-transfer wording to find the payee", () => {
+    expect(identifyMerchant("E-TRANSFER SENT J TREMBLAY DESIGN").name).toBe("Tremblay Design");
+  });
+  it("keeps the known category suggestion when matched through an alias", () => {
+    const m = identifyMerchant("AMAZON.CA", new Map([["AMAZON.CA", "Amazon"]]));
+    expect(m).toMatchObject({ source: "ALIAS", suggestedCategory: "Shopping > General merchandise" });
+  });
   it("user aliases win", () => {
     const aliases = new Map([[cleanDescriptor("J TREMBLAY DESIGN"), "Tremblay Design Studio"]]);
     expect(identifyMerchant("J TREMBLAY DESIGN", aliases)).toMatchObject({ name: "Tremblay Design Studio", source: "ALIAS", confidence: 1 });

@@ -162,7 +162,7 @@ export function ImportWizard({ accounts, categories, initialAccount, accountant 
               <div>
                 <h2 className="text-lg font-bold"><span className="mr-1.5 inline-grid h-5 w-5 place-items-center rounded-full bg-brand-600 align-middle text-[11px] text-white">3</span> Check what we found</h2>
                 <p className="mt-1 text-sm text-slate-600">
-                  {preview.institution ? <>This looks like a <strong>{preview.institution}</strong> statement. </> : null}
+                  {preview.institution ? <>We recognised this as a <strong>{preview.institution}</strong> statement. </> : null}
                   We found <strong>{preview.counts.total}</strong> transactions{preview.periodStart && preview.periodEnd ? <> from {preview.periodStart} to {preview.periodEnd}</> : null}.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs">
@@ -256,11 +256,11 @@ function Row({ r, d, setD, categories, accountant, currency, reimport, toggleRei
   return (
     <tr className={clsx(!included && "bg-slate-50/70 text-slate-400", r.needsAttention && included && "bg-amber-50/40")}>
       <td className="td align-top"><input type="checkbox" aria-label="Include this transaction" checked={included} disabled={!r.date} onChange={() => (already ? toggleReimport() : setD({ skip: !d.skip }))} /></td>
-      <td className="td whitespace-nowrap align-top">{r.date || <span className="text-red-600">Unreadable</span>}</td>
+      <td className="td whitespace-nowrap align-top">{r.date ? new Date(`${r.date}T00:00:00Z`).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : <span className="text-red-600">Unreadable</span>}</td>
       <td className="td align-top">
         <input className="w-full min-w-[14rem] rounded-md border border-transparent bg-transparent px-1 py-0.5 hover:border-slate-200 focus:border-brand-400 focus:bg-white focus:outline-none" value={d.description ?? r.description} onChange={(e) => setD({ description: e.target.value })} aria-label="Description" />
         <div className="mt-1 flex flex-wrap gap-1 px-1">
-          {r.merchantName && <span className="text-xs text-slate-500">Supplier: <strong className="font-medium text-slate-700">{r.merchantName}</strong>{r.merchantConfidence < 0.7 ? " (new)" : ""}</span>}
+          {r.merchantName && <span className="text-xs text-slate-500">{kind === "INCOME" ? "From" : "Supplier"}: <strong className="font-medium text-slate-700">{r.merchantName}</strong>{r.merchantConfidence < 0.7 ? " (new)" : ""}</span>}
           {already && <span className="chip bg-slate-100 text-slate-600">Already imported</span>}
           {r.duplicate.status === "POSSIBLE_DUPLICATE" && <span className="chip bg-amber-100 text-amber-800" title={r.duplicate.reason}>Might be a duplicate</span>}
         </div>
@@ -268,7 +268,7 @@ function Row({ r, d, setD, categories, accountant, currency, reimport, toggleRei
         {r.duplicate.status === "POSSIBLE_DUPLICATE" && <div className="mt-1 px-1 text-xs text-amber-800">{r.duplicate.reason} We&apos;ll import it and ask you to confirm in Review.</div>}
       </td>
       <td className="td align-top">
-        <select className="input py-1.5 text-xs" value={kind} onChange={(e) => setD({ kind: e.target.value as TxnKindName })} aria-label="Type">
+        <select className="input min-w-[11rem] py-1.5 text-xs" value={kind} onChange={(e) => setD({ kind: e.target.value as TxnKindName })} aria-label="Type">
           {KIND_KEYS.map((k) => <option key={k} value={k}>{accountant ? KIND_LABELS[k].accountant : KIND_LABELS[k].simple}</option>)}
         </select>
       </td>

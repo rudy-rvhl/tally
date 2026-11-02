@@ -32,6 +32,10 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
   const months = lastNMonths(latest, 12);
   const [cov, balances] = await Promise.all([accountCoverage(user.id, months), Promise.all(accounts.map((a) => accountBalance(a)))]);
   const missing = cov.flatMap((a) => a.cells.filter((c) => c.status === "MISSING").map((c) => ({ ...c, name: a.name })));
+  // Hide months before any account's first statement.
+  const firstShown = months.findIndex((_, i) => cov.some((a) => a.cells[i].status !== "NOT_STARTED"));
+  const shownMonths = firstShown > 0 ? months.slice(firstShown) : months;
+  const offset = months.length - shownMonths.length;
   const groups = [["BUSINESS", "Business"], ["PERSONAL", "Personal"]] as const;
 
   return (
@@ -85,12 +89,14 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
       <Card title="Which months have been imported?" subtitle="A full square means we have the whole month. Gaps mean a statement is missing, so totals for that month will be too low." padded={false}>
         <div className="overflow-x-auto p-5">
           <table className="text-sm">
-            <thead><tr><th className="pr-4 text-left text-xs font-medium text-slate-500">Account</th>{months.map((m) => <th key={m} className="px-1 text-center text-xs font-medium text-slate-500">{monthLabel(m, "short").replace(" ", " ")}</th>)}</tr></thead>
+            <thead><tr><th className="pr-4 text-left text-xs font-medium text-slate-500">Account</th>{shownMonths.map((m) => <th key={m} className="px-1 text-center text-xs font-medium text-slate-500">{monthLabel(m, "short").replace(" ", " ")}</th>)}</tr></thead>
             <tbody>
               {cov.map((a) => (
                 <tr key={a.accountId}>
                   <td className="whitespace-nowrap py-1 pr-4 font-medium text-slate-700"><Link className="hover:text-brand-700" href={`/accounts/${a.accountId}`}>{a.name}</Link></td>
-                  {a.cells.map((c) => (
+                  {a.cells.slice(offset).map((c) => c.status === "NOT_STARTED" ? (
+                    <td key={c.month} className="p-1 text-center"><span title={`${monthLabel(c.month)}: before this account's first statement`} className="mx-auto block h-7 w-7 rounded-md bg-slate-50" /></td>
+                  ) : (
                     <td key={c.month} className="p-1 text-center">
                       <Link href={c.status === "COMPLETE" ? `/transactions?account=${a.accountId}&month=${c.month}` : `/import?account=${a.accountId}`}
                         title={`${monthLabel(c.month)}: ${c.status === "COMPLETE" ? "complete" : c.status === "PARTIAL" ? `${c.coveredDays} of ${c.daysInMonth} days` : "missing. Click to import"}`}
@@ -107,6 +113,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
             <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-500" /> Complete</span>
             <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-gradient-to-r from-emerald-400 to-slate-100" /> Part of the month</span>
             <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded border-2 border-dashed border-slate-300" /> Missing (click to import)</span>
+            <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-slate-100" /> Before the first statement</span>
           </div>
           {missing.length > 0 && <p className="mt-3 text-sm text-amber-700">{missing.length} account-month{missing.length === 1 ? " is" : "s are"} missing in the last 12 months.</p>}
         </div>

@@ -73,6 +73,7 @@ const NOISE_PREFIXES = [
   /^(PRE-?AUTH(ORIZED)?|PREAUTHORIZED)\s+(DEBIT|PAYMENT)\s*/,
   /^(SQ|TST|SP|PY|DD|PP|IN|CKO)\s?\*\s*/,
   /^PAYPAL\s?\*\s?(?=\w)/,
+  /^(INTERAC\s+)?(E-?TRANSFER|VIREMENT( INTERAC)?)\s+(SENT|RECEIVED|TO|FROM|ENVOYE|RECU)?\s*/,
 ];
 
 const PROVINCES = "(ON|QC|BC|AB|MB|SK|NS|NB|NL|PE|YT|NT|NU|WA|NY|CA|TX|FL)";
@@ -115,7 +116,11 @@ function titleCase(s: string): string {
 export function identifyMerchant(raw: string, aliases: Map<string, string> = new Map()): MerchantMatch {
   const key = cleanDescriptor(raw);
   const alias = aliases.get(key);
-  if (alias) return { name: alias, key, confidence: 1, source: "ALIAS" };
+  if (alias) {
+    const known = KNOWN_MERCHANTS.find((k) => k.name === alias && k.patterns.some((p) => p.test(key) || p.test(raw.toUpperCase())))
+      ?? KNOWN_MERCHANTS.find((k) => k.name === alias);
+    return { name: alias, key, confidence: 1, source: "ALIAS", suggestedCategory: known?.category };
+  }
 
   const upper = raw.toUpperCase();
   for (const km of KNOWN_MERCHANTS) {

@@ -44,7 +44,8 @@ export default async function SupplierPage({ params, searchParams }: { params: P
   const topAccount = [...accCounts].sort((a, b) => b[1] - a[1])[0];
   const topAccountName = topAccount ? accounts.find((a) => a.id === topAccount[0])?.name : null;
   const months = lastNMonths(latest, 12);
-  const series = monthlySeries(all, months);
+  const firstMonth = all.length ? monthKey(all[0].date) : latest;
+  const series = monthlySeries(all, months).filter((p) => p.month >= firstMonth);
   const recurring = detectRecurring(all)[0];
   const refunds = all.filter((t) => t.kind === "REFUND" || t.kind === "REVERSAL");
   const byAcc = groupSpending(filtered.txns, (t) => ({ key: t.accountId, label: accounts.find((a) => a.id === t.accountId)?.name ?? "Account" }));
@@ -69,7 +70,7 @@ export default async function SupplierPage({ params, searchParams }: { params: P
       </div>
 
       <div className="mb-6 grid gap-6 lg:grid-cols-3">
-        <Card title="Spending history" subtitle="Last 12 months. Click a month to filter the list below." className="lg:col-span-2">
+        <Card title="Spending history" subtitle={`${series.length === 12 ? "Last 12 months" : `Since ${monthLabel(firstMonth)}`}. Click a month to filter the list below.`} className="lg:col-span-2">
           <TrendChart showIncome={false} height={220} data={series.map((p) => ({ label: monthLabel(p.month, "short"), spending: p.spendingCents, href: `/spending/suppliers/${id}?month=${p.month}` }))} />
         </Card>
         <div className="space-y-6">

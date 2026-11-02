@@ -1,6 +1,7 @@
 "use client";
 import { useActionState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { goTo } from "./navigate";
 import type { ActionState } from "@/app/actions";
 
 /** Wraps a server action; shows plain-language success or error messages inline. */
@@ -11,7 +12,7 @@ export function ActionForm({ action, children, className, resetOnSuccess = false
   const ref = useRef<HTMLFormElement>(null);
   const router = useRouter();
   useEffect(() => {
-    if (state.redirectTo) router.push(state.redirectTo);
+    if (state.redirectTo) goTo(router, state.redirectTo);
     else if (state.ok && resetOnSuccess) ref.current?.reset();
   }, [state, resetOnSuccess, router]);
   return (

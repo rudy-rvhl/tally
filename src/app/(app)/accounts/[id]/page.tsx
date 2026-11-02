@@ -45,12 +45,13 @@ export default async function AccountPage({ params }: { params: Promise<{ id: st
 
       <Card title="Months imported" className="mb-6">
         <div className="flex flex-wrap gap-2">
-          {cells.map((c) => (
+          {cells.filter((c) => c.status !== "NOT_STARTED").map((c) => (
             <Link key={c.month} href={c.status === "MISSING" ? `/import?account=${a.id}` : `/transactions?account=${a.id}&month=${c.month}`}
               className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${c.status === "COMPLETE" ? "bg-emerald-50 text-emerald-800" : c.status === "PARTIAL" ? "bg-amber-50 text-amber-800" : "border border-dashed border-slate-300 text-slate-500 hover:border-brand-400"}`}>
               {monthLabel(c.month, "short")} {c.status === "COMPLETE" ? "✓" : c.status === "PARTIAL" ? `${c.coveredDays}/${c.daysInMonth} days` : "missing"}
             </Link>
           ))}
+          {cells.every((c) => c.status === "NOT_STARTED") && <p className="text-sm text-slate-500">No statements imported yet. <Link className="link" href={`/import?account=${a.id}`}>Import one</Link> to start tracking this account.</p>}
         </div>
       </Card>
 

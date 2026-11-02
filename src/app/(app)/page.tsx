@@ -7,7 +7,7 @@ import { latestMonth, loadAnalytic } from "@/lib/services/query";
 import { accountCoverage, lastNMonths } from "@/lib/services/options";
 import { byCategory, byMerchant, detectAnomalies, detectRecurring, groupSpending, monthlySeries, rollingAverage, summarize } from "@/lib/engine/analytics";
 import { anomalyInsights, explainMonth, recurringInsights } from "@/lib/engine/insights";
-import { addMonths, monthLabel, monthRange, isoDate } from "@/lib/engine/dates";
+import { addMonths, monthKey, monthLabel, monthRange, isoDate } from "@/lib/engine/dates";
 import { formatMoney, pctChange } from "@/lib/engine/money";
 import { EXAMPLE_QUESTIONS } from "@/lib/engine/ask";
 import { BarList, Card, Delta, EmptyState, Notice, PageHeader, Stat } from "@/components/ui";
@@ -57,8 +57,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   ]);
   const c = user.baseCurrency;
   const s = summarize(cur.txns), p = summarize(last.txns);
-  const series = monthlySeries(hist.txns, months);
+  // Start the chart at the first month with data, so it isn't mostly empty.
+  const firstDataMonth = hist.txns.length ? monthKey(hist.txns[0].date) : month;
+  const series = monthlySeries(hist.txns, months).filter((p) => p.month >= firstDataMonth);
   const avg3 = rollingAverage(series.map((x) => x.spendingCents), 3);
+  void yearStart;
   const prior3 = series.slice(-4, -1).map((x) => x.spendingCents);
   const avgPrior = prior3.length === 3 ? Math.round(prior3.reduce((a, b) => a + b, 0) / 3) : null;
   const cats = groupSpending(cur.txns, byCategory);
@@ -68,7 +71,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const recurringTotal = recurringThisMonth.reduce((a, r) => a + r.lastCents, 0);
   const anomalies = detectAnomalies(hist.txns.filter((t) => t.date < monthRange(month).start), cur.txns);
   const insights = [...explainMonth(cur.txns, last.txns, month, prev, c), ...recurringInsights(recurringThisMonth, c), ...anomalyInsights(anomalies, c)];
-  const gaps = cov.filter((a) => a.cells[0].status !== "COMPLETE");
+  const gaps = cov.filter((a) => a.cells[0].status === "MISSING" || a.cells[0].status === "PARTIAL");
   const catIds = await prisma.category.findMany({ where: { userId: user.id, parentId: null }, select: { id: true, name: true } });
   const catHref = (name: string) => txnLink({}, { month, kind: "spending", category: catIds.find((x) => x.name === name)?.id });
   const merchantHref = (key: string, label: string) => key.startsWith("name:") ? txnLink({}, { month, q: label }) : `/spending/suppliers/${key}?month=${month}`;
@@ -117,7 +120,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       </div>
 
       <div className="mb-6 grid gap-6 xl:grid-cols-5">
-        <Card title="Spending over time" subtitle="Last 12 months. Click a month to see its transactions." className="xl:col-span-3">
+        <Card title="Spending over time" subtitle={`${series.length === 12 ? "Last 12 months" : `Since ${monthLabel(firstDataMonth)}, your first imported statement`}. Click a month to see its transactions.`} className="xl:col-span-3">
           <TrendChart data={series.map((x, i) => ({ label: monthLabel(x.month, "short"), spending: x.spendingCents, income: x.incomeCents, average: avg3[i], href: `/?month=${x.month}` }))} />
         </Card>
         <Card title={`Where the money went in ${mLabel}`} subtitle={cats[0] ? `Biggest: ${cats[0].label} (${formatMoney(cats[0].spendCents, c)})` : undefined} className="xl:col-span-2">

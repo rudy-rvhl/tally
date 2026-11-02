@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { Logo } from "@/components/Logo";
 import { SideNav, BottomNav } from "@/components/Nav";
-import { AskBar } from "@/components/AskBar";
+import { HeaderAsk } from "@/components/HeaderAsk";
 import { logoutAction, setModeAction } from "@/app/actions";
 import { LogOut, Upload } from "lucide-react";
 
@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-[#f6f7fb]/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
           <Link href="/" className="lg:hidden"><Logo compact /></Link>
-          <div className="min-w-0 flex-1"><AskBar /></div>
+          <HeaderAsk />
           <form action={setModeAction} className="hidden sm:block">
             <input type="hidden" name="mode" value={accountant ? "SIMPLE" : "ACCOUNTANT"} />
             <button className="rounded-full border border-slate-200 bg-white p-1 text-xs font-semibold" title="Switch between the simple view and the accountant view. Both use the same numbers.">

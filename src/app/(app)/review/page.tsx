@@ -97,7 +97,7 @@ export default async function ReviewPage() {
                             <button className="btn-primary btn-sm">Save</button>
                           </ActionForm>
                         )}
-                        {i.type === "CATEGORY" && <Btn item={i.id} action="accept">{t?.category ? `Looks right: ${t.category.name}` : "Skip for now"}</Btn>}
+                        {i.type === "CATEGORY" && <Btn item={i.id} action="accept">{t?.category && t.category.name !== "Uncategorized" ? `Looks right: ${t.category.name}` : "Skip for now"}</Btn>}
                         {i.type === "RECONCILIATION" && (<>
                           <Link className="btn-primary btn-sm" href={`/accounts/${statements.find((s2) => s2.id === i.statementId)?.accountId ?? ""}`}>See the statement</Link>
                           <Btn item={i.id} action="dismiss">Dismiss</Btn>

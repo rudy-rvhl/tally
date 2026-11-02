@@ -43,10 +43,25 @@ describe("recurring detection", () => {
   });
 });
 
+describe("price changes", () => {
+  it("doesn't call a restaurant's varying bill a price increase", () => {
+    const r = detectRecurring([t("2026-08-16", -10830, "PURCHASE", "Bistro"), t("2026-09-16", -11130, "PURCHASE", "Bistro"), t("2026-10-16", -11430, "PURCHASE", "Bistro")]);
+    expect(r[0].priceChangeCents).toBe(0);
+  });
+});
+
+describe("anomalies", () => {
+  it("doesn't flag a regular rent payment as unusual", async () => {
+    const { detectAnomalies } = await import("@/lib/engine/analytics");
+    const hist = [t("2026-08-03", -240000, "PURCHASE", "Landlord"), t("2026-09-03", -240000, "PURCHASE", "Landlord")];
+    expect(detectAnomalies(hist, [t("2026-10-03", -240000, "PURCHASE", "Landlord")])).toEqual([]);
+  });
+});
+
 describe("statement coverage", () => {
   it("marks missing and partial months", () => {
-    const c = coverage([{ start: new Date("2026-08-16T00:00:00Z"), end: new Date("2026-09-30T00:00:00Z") }], ["2026-08", "2026-09", "2026-10"]);
-    expect(c.map((x) => x.status)).toEqual(["PARTIAL", "COMPLETE", "MISSING"]);
+    const c = coverage([{ start: new Date("2026-08-16T00:00:00Z"), end: new Date("2026-09-30T00:00:00Z") }], ["2026-07", "2026-08", "2026-09", "2026-10"]);
+    expect(c.map((x) => x.status)).toEqual(["NOT_STARTED", "PARTIAL", "COMPLETE", "MISSING"]);
   });
 });
 

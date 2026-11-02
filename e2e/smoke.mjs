@@ -15,7 +15,8 @@ mkdirSync(SHOTS, { recursive: true });
 const sample = (f) => path.join(here, "..", "samples", f);
 let failures = 0;
 const check = (cond, msg) => { console.log(`${cond ? "PASS" : "FAIL"}  ${msg}`); if (!cond) failures++; };
-const money = (s) => Number(String(s).replace(/[^0-9.-]/g, ""));
+/** First money amount in a string, e.g. "Money spent$6,097.95▲ $2..." -> 6097.95 */
+const money = (s) => { const m = String(s).match(/-?\$?\s?(-?[\d,]+\.\d{2}|-?\d+)/); return m ? Number(m[1].replace(/,/g, "")) : NaN; };
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1360, height: 900 } });
@@ -76,7 +77,7 @@ async function commit() {
 
 await importFile(ids.rbc, "rbc-business-chequing-2026-08-to-10.csv", { expectNew: 24 });
 await shot("01-import-preview");
-check(await page.isVisible("text=RBC Royal Bank"), "RBC layout recognised");
+check(await page.isVisible("text=/recognised this as a RBC Royal Bank statement/"), "RBC layout recognised");
 check((await commit()).includes("24"), "RBC: 24 imported");
 
 await importFile(ids.amex, "amex-business-2026-08-to-10.csv", { expectNew: 33 });
@@ -85,7 +86,7 @@ check((await commit()).includes("33"), "Amex: 33 imported");
 await shot("02-import-result");
 
 await importFile(ids.scotia, "scotiabank-visa-2026-09-to-10.ofx", { expectNew: 11, fill: async () => {
-  await page.click("summary:has-text('Statement period and balances')").catch(() => {});
+  await page.locator("details:has(#p3)").evaluate((d) => { d.open = true; });
   await page.fill("#p3", "3136.55");
 } });
 check((await commit()).includes("11"), "Scotia OFX: 11 imported");
@@ -109,7 +110,7 @@ const oct = {
   td: 4.85 * 2 + 63.27,
 };
 const expected = Object.values(oct).reduce((a, b) => a + b, 0);
-check(Math.abs(money(spentCard.split("Money spent")[1]) - expected) < 0.005, `October spending = ${expected.toFixed(2)} (excludes card payments, loan payments; nets refunds). Got "${spentCard}"`);
+check(Math.abs(money(spentCard) - expected) < 0.005, `October spending = ${expected.toFixed(2)} (excludes card payments, loan payments; nets refunds). Got "${spentCard}"`);
 check(await page.isVisible("text=What changed?"), "plain-language summary present");
 const firstInsight = await page.locator("text=/You spent .* (more|less) in October than in September/").first().textContent();
 check(!!firstInsight, `insight explains change: "${firstInsight}"`);
@@ -117,12 +118,12 @@ check(!!firstInsight, `insight explains change: "${firstInsight}"`);
 // 6. Drill down: Overview -> Amazon -> October -> purchase -> account
 await go(`${BASE}/spending?view=suppliers`);
 await shot("04-spending-suppliers");
-await page.click("a:has-text('Amazon'):not(:has-text('Web'))");
+await page.click("table a:text-is('Amazon')");
 await page.waitForURL(/suppliers\//);
 await shot("05-supplier-amazon");
 const amazonAll = 75.12 + 42.80 + 120 + 64.99 + 9.99 + 120 + 75 + 250 + 310.45 + 9.99 - 64.99 + 89.99 + 149.00;
 const life = await page.locator("a:has-text('Total spent, all time')").textContent();
-check(Math.abs(money(life.split("all time")[1]) - amazonAll) < 0.005, `Amazon combined across 2 cards and 5 spellings = ${amazonAll.toFixed(2)} (got "${life}")`);
+check(Math.abs(money(life) - amazonAll) < 0.005, `Amazon combined across 2 cards and 5 spellings = ${amazonAll.toFixed(2)} (got "${life}")`);
 check(await page.isVisible("text=across 2 accounts"), "Amazon shows accounts used");
 await page.click("a:has-text('Oct 2026')").catch(() => {});
 const firstRow = page.locator("table tbody tr a").first();
@@ -174,9 +175,10 @@ check(await page.isVisible("text=Matches your statement"), "Scotiabank Visa stat
 await go(`${BASE}/reports?month=2026-10`);
 await shot("10-reports");
 check(await page.isVisible("text=October 2026 summary"), "monthly report renders");
-await go(`${BASE}/settings`);
-await page.click("button:has-text('Accountant')");
 await go(`${BASE}/accountant?tab=journal&month=2026-10`);
+check(await page.isVisible("text=Accountant View is turned off"), "accountant tools are hidden until needed");
+await page.click("button:has-text('Turn on Accountant View')");
+await page.waitForSelector("text=Trial balance", { timeout: 15000 });
 check(await page.isVisible("text=Debits equal credits."), "trial balance balances");
 await shot("11-accountant-journal");
 
@@ -192,7 +194,7 @@ await mp.goto(`${BASE}/?month=2026-10`);
 await mp.screenshot({ path: path.join(SHOTS, "12-mobile-overview.png"), fullPage: true });
 const overflow = await mp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
 check(overflow <= 1, `no horizontal scroll on phone (overflow ${overflow}px)`);
-check(await mp.isVisible("nav[aria-label=Main] >> text=Review"), "bottom navigation on phone");
+check(await mp.isVisible("nav.fixed[aria-label=Main] >> text=Review"), "bottom navigation on phone");
 await mp.goto(`${BASE}/transactions?month=2026-10`);
 await mp.screenshot({ path: path.join(SHOTS, "13-mobile-transactions.png"), fullPage: true });
 

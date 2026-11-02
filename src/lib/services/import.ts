@@ -104,7 +104,7 @@ export async function previewImport(userId: string, accountId: string, fileName:
     const c = classify(ctx, t.description, t.amountCents, account.type, account.id);
     const warnings = [...t.warnings];
     if (c.kindConfidence < REVIEW_CONFIDENCE_THRESHOLD) warnings.push(`We're not sure what type of transaction this is. We guessed "${KIND_LABELS[c.kind].simple}".`);
-    if (c.category.confidence < REVIEW_CONFIDENCE_THRESHOLD && !NO_MERCHANT.includes(c.kind)) warnings.push("Please choose an expense category.");
+    if (c.category.confidence < REVIEW_CONFIDENCE_THRESHOLD && !NO_MERCHANT.includes(c.kind) && c.kind !== "INCOME") warnings.push("Please choose an expense category.");
     const v = verdicts[index];
     return {
       index, sourceRow: t.sourceRow, date: t.date.getTime() > 0 ? isoDate(t.date) : "", amountCents: t.amountCents, description: t.description,

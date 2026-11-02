@@ -143,12 +143,15 @@ export function detectRecurring(txns: AnalyticTxn[]): RecurringItem[] {
     const last = sorted[sorted.length - 1];
     const lastAmt = -last.amountCents;
     const prior = amounts.slice(0, -1);
-    const priorTypical = median(prior.slice(-3));
+    const recentPrior = prior.slice(-3);
+    const priorTypical = median(recentPrior);
+    // Only call it a price change when earlier charges were a fixed price (like a subscription).
+    const fixedPrice = recentPrior.length >= 2 && Math.max(...recentPrior) - Math.min(...recentPrior) <= Math.max(1, priorTypical * 0.01);
     const gaps = sorted.slice(1).map((t, i) => (t.date.getTime() - sorted[i].date.getTime()) / 86400000);
     const monthly = gaps.every((g) => g >= 20 && g <= 40);
     out.push({
       merchantKey: k, merchant: last.merchant ?? "Unknown", months: months.size, typicalCents: med, lastCents: lastAmt, lastDate: last.date,
-      priceChangeCents: lastAmt - priorTypical, priceChangePct: pctChange(lastAmt, priorTypical), cadence: monthly ? "monthly" : "irregular",
+      priceChangeCents: fixedPrice ? lastAmt - priorTypical : 0, priceChangePct: fixedPrice ? pctChange(lastAmt, priorTypical) : null, cadence: monthly ? "monthly" : "irregular",
     });
   }
   return out.sort((a, b) => b.typicalCents - a.typicalCents);
@@ -167,7 +170,7 @@ export function detectAnomalies(history: AnalyticTxn[], target: AnalyticTxn[]): 
   for (const t of target) {
     if (t.kind !== "PURCHASE") continue;
     const amt = -t.amountCents;
-    const hist = (byM.get(byMerchant(t).key) ?? []).filter((a) => a !== amt);
+    const hist = byM.get(byMerchant(t).key) ?? [];
     if (hist.length >= 3) {
       const med = median(hist);
       if (amt > med * 3 && amt - med > 5000) out.push({ id: t.id, amountCents: amt, reason: `About ${Math.round(amt / med)}× your usual ${t.merchant} purchase` });
@@ -178,10 +181,12 @@ export function detectAnomalies(history: AnalyticTxn[], target: AnalyticTxn[]): 
   return out.sort((a, b) => b.amountCents - a.amountCents);
 }
 
-export interface CoverageCell { month: string; status: "COMPLETE" | "PARTIAL" | "MISSING"; coveredDays: number; daysInMonth: number }
+/** NOT_STARTED = before the account's first statement (not a gap). */
+export interface CoverageCell { month: string; status: "COMPLETE" | "PARTIAL" | "MISSING" | "NOT_STARTED"; coveredDays: number; daysInMonth: number }
 
 /** Which months each account has statements for. Periods are [start, end] inclusive dates. */
 export function coverage(periods: { start: Date; end: Date }[], months: string[]): CoverageCell[] {
+  const first = periods.length ? Math.min(...periods.map((p) => p.start.getTime())) : Infinity;
   return months.map((m) => {
     const [y, mo] = m.split("-").map(Number);
     const days = new Date(Date.UTC(y, mo, 0)).getUTCDate();
@@ -192,7 +197,8 @@ export function coverage(periods: { start: Date; end: Date }[], months: string[]
         if (t >= p.start.getTime() && t <= p.end.getTime()) covered.add(d);
       }
     }
-    const status = covered.size >= days ? "COMPLETE" : covered.size === 0 ? "MISSING" : "PARTIAL";
+    const monthEnd = Date.UTC(y, mo - 1, days);
+    const status = covered.size >= days ? "COMPLETE" : covered.size > 0 ? "PARTIAL" : monthEnd < first ? "NOT_STARTED" : "MISSING";
     return { month: m, status, coveredDays: covered.size, daysInMonth: days };
   });
 }

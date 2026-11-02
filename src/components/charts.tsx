@@ -48,9 +48,9 @@ export function TrendChart({ data, showIncome = true, height = 260 }: { data: Tr
           <YAxis tickFormatter={axisMoney} tick={{ fontSize: 12, fill: "#64748b" }} tickLine={false} axisLine={false} width={64} />
           <Tooltip content={<TooltipBox />} />
           <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-          <Area type="monotone" dataKey="spending" name="Money spent" stroke={SPEND} strokeWidth={2.5} fill="url(#spendFill)" dot={{ r: 3 }} activeDot={{ r: 5 }} />
-          {showIncome && <Line type="monotone" dataKey="income" name="Money received" stroke={INCOME} strokeWidth={2} dot={{ r: 2.5 }} />}
-          {data.some((d) => d.average) && <Line type="monotone" dataKey="average" name="3-month average spent" stroke="#94a3b8" strokeDasharray="5 4" dot={false} />}
+          <Area isAnimationActive={false} type="monotone" dataKey="spending" name="Money spent" stroke={SPEND} strokeWidth={2.5} fill="url(#spendFill)" dot={{ r: 3 }} activeDot={{ r: 5 }} />
+          {showIncome && <Line isAnimationActive={false} type="monotone" dataKey="income" name="Money received" stroke={INCOME} strokeWidth={2} dot={{ r: 2.5 }} />}
+          {data.some((d) => d.average) && <Line isAnimationActive={false} type="monotone" dataKey="average" name="3-month average spent" stroke="#94a3b8" strokeDasharray="5 4" dot={false} />}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -66,11 +66,11 @@ export function DonutChart({ data, currency = "CAD", height = 240 }: { data: Sli
   const rest = data.slice(8).reduce((s, d) => s + d.value, 0);
   const shown = rest > 0 ? [...top, { label: "Everything else", value: rest, href: top[0]?.href.split("?")[0] ?? "/transactions" }] : top;
   return (
-    <div className="grid items-center gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+    <div className="grid items-center gap-4">
       <div style={{ height }} className="relative">
         <ResponsiveContainer>
           <PieChart>
-            <Pie data={shown} dataKey="value" nameKey="label" innerRadius="62%" outerRadius="95%" paddingAngle={1.5} stroke="none" onClick={(d) => router.push((d as unknown as Slice).href)} className="cursor-pointer">
+            <Pie isAnimationActive={false} data={shown} dataKey="value" nameKey="label" innerRadius="62%" outerRadius="95%" paddingAngle={1.5} stroke="none" onClick={(d) => router.push((d as unknown as Slice).href)} className="cursor-pointer">
               {shown.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
             </Pie>
             <Tooltip content={<TooltipBox currency={currency} />} />
@@ -110,7 +110,7 @@ export function StackedBars({ data, series, hrefTemplate, height = 260 }: { data
           <Tooltip content={<TooltipBox />} cursor={{ fill: "#f1f5f9" }} />
           <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
           {series.map((s, i) => (
-            <Bar key={s.key} dataKey={s.key} name={s.label} stackId="a" fill={PALETTE[i % PALETTE.length]} radius={i === series.length - 1 ? [4, 4, 0, 0] : 0}
+            <Bar isAnimationActive={false} key={s.key} dataKey={s.key} name={s.label} stackId="a" fill={PALETTE[i % PALETTE.length]} radius={i === series.length - 1 ? [4, 4, 0, 0] : 0}
               className="cursor-pointer" onClick={(d) => router.push(hrefTemplate.replace("MONTH", String((d as unknown as { payload: Record<string, string> }).payload.month)).replace("SERIES", s.key))} />
           ))}
         </BarChart>
@@ -130,8 +130,8 @@ export function IncomeVsSpending({ data, height = 260 }: { data: TrendPoint[]; h
           <YAxis tickFormatter={axisMoney} tick={{ fontSize: 12, fill: "#64748b" }} tickLine={false} axisLine={false} width={64} />
           <Tooltip content={<TooltipBox />} cursor={{ fill: "#f1f5f9" }} />
           <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-          <Bar dataKey="income" name="Money received" fill={INCOME} radius={[4, 4, 0, 0]} className="cursor-pointer" onClick={(d) => router.push((d as unknown as { payload: TrendPoint }).payload.href.replace("kind=spending", "kind=income"))} />
-          <Bar dataKey="spending" name="Money spent" fill={SPEND} radius={[4, 4, 0, 0]} className="cursor-pointer" onClick={(d) => router.push((d as unknown as { payload: TrendPoint }).payload.href)} />
+          <Bar isAnimationActive={false} dataKey="income" name="Money received" fill={INCOME} radius={[4, 4, 0, 0]} className="cursor-pointer" onClick={(d) => router.push((d as unknown as { payload: TrendPoint }).payload.href.replace("kind=spending", "kind=income"))} />
+          <Bar isAnimationActive={false} dataKey="spending" name="Money spent" fill={SPEND} radius={[4, 4, 0, 0]} className="cursor-pointer" onClick={(d) => router.push((d as unknown as { payload: TrendPoint }).payload.href)} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -149,7 +149,7 @@ export function MultiLine({ data, series, height = 260 }: { data: Record<string,
           <YAxis tickFormatter={axisMoney} tick={{ fontSize: 12, fill: "#64748b" }} tickLine={false} axisLine={false} width={64} />
           <Tooltip content={<TooltipBox />} />
           <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-          {series.map((s, i) => <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot={{ r: 2.5 }} connectNulls />)}
+          {series.map((s, i) => <Line isAnimationActive={false} key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={PALETTE[i % PALETTE.length]} strokeWidth={2} dot={{ r: 2.5 }} connectNulls />)}
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -162,7 +162,7 @@ export function Sparkline({ values, height = 36 }: { values: number[]; height?: 
     <div style={{ height }} className="w-24">
       <ResponsiveContainer>
         <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
-          <Area type="monotone" dataKey="v" stroke={SPEND} fill={SPEND} fillOpacity={0.12} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+          <Area isAnimationActive={false} type="monotone" dataKey="v" stroke={SPEND} fill={SPEND} fillOpacity={0.12} strokeWidth={1.5} dot={false} />
         </AreaChart>
       </ResponsiveContainer>
     </div>

@@ -17,6 +17,7 @@ describe("CSV import", () => {
     const rent = r.transactions.find((t) => t.description.startsWith("RENT"))!;
     expect(rent.amountCents).toBe(-240000);
     expect(isoDate(r.periodStart!)).toBe("2026-08-01");
+    expect(isoDate(r.periodEnd!)).toBe("2026-10-31");
   });
   it("inverts Amex charges (listed as positive) into money out", () => {
     const r = parseCsv(sample("amex-business-2026-08-to-10.csv").toString(), "BUSINESS_CREDIT_CARD");
