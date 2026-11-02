@@ -41,6 +41,12 @@ const PSQL = findPsql();
 
 console.log("\nLedgerIQ checkup\n");
 
+const nodeMajor = Number(process.versions.node.split(".")[0]);
+if (nodeMajor < 22) {
+  bad(`Node.js ${process.versions.node} is too old. LedgerIQ needs Node 22 or newer.`);
+  info("Install the current LTS from https://nodejs.org (or `brew install node@22`), open a new Terminal, then run `npm ci`.");
+} else ok(`Node.js ${process.versions.node}`);
+
 // 1. .env and DATABASE_URL
 if (!existsSync(".env")) { bad("No .env file. Run: cp .env.example .env"); process.exit(1); }
 const envFile = Object.fromEntries(readFileSync(".env", "utf8").split(/\r?\n/).filter((l) => /^\s*[A-Z_]+=/.test(l)).map((l) => {

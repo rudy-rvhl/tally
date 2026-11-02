@@ -40,7 +40,7 @@ Every total can be clicked through to the transactions behind it.
 
 ## Run it locally
 
-Requirements: Node 20+, PostgreSQL 14+.
+Requirements: Node 22+, PostgreSQL 14+.
 
 ```bash
 npm install

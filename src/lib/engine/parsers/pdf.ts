@@ -454,10 +454,27 @@ export function parseStatementText(text: string, accountType: AccountTypeName): 
   return parseLayout(lines, accountType);
 }
 
+// pdf.js's "legacy" build installs polyfills on runtimes that lack them. On Node < 22 that
+// includes ArrayBuffer.prototype.transfer, which pdf.js never calls but which Next.js's response
+// streaming then picks up and fails with "ArrayBuffer is not detachable and could not be cloned".
+// Remember what the runtime had natively, and remove that one polyfill after loading pdf.js.
+const NATIVE_TRANSFER = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, "transfer");
+
+function dropTransferPolyfill() {
+  if (!NATIVE_TRANSFER && Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, "transfer")) {
+    delete (ArrayBuffer.prototype as { transfer?: unknown }).transfer;
+  }
+}
+
 /** Open a PDF with the standard pdf.js build (shared with OCR rendering). */
 export async function openPdf(buf: Buffer) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  return pdfjs.getDocument({ data: new Uint8Array(buf), isEvalSupported: false, useSystemFonts: false, verbosity: 0 }).promise;
+  dropTransferPolyfill();
+  try {
+    return await pdfjs.getDocument({ data: new Uint8Array(buf), isEvalSupported: false, useSystemFonts: false, verbosity: 0 }).promise;
+  } finally {
+    dropTransferPolyfill(); // the worker module, loaded on first open, installs its own copy
+  }
 }
 
 /** Extract positioned words from a text PDF. Returns null for image-only (scanned) PDFs. */
