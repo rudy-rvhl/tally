@@ -15,6 +15,7 @@ import { MonthPicker } from "@/components/MonthPicker";
 import { InsightList } from "@/components/InsightList";
 import { IncomeVsSpending, MultiLine, StackedBars, TrendChart } from "@/components/charts";
 import { PrintButton } from "@/components/PrintButton";
+import { BankBookExport } from "@/components/BankBookExport";
 
 export const metadata = { title: "Reports" };
 
@@ -55,6 +56,21 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const catHref = (name: string, m = month) => txnLink({}, { month: m, kind: "spending", category: cats.find((x) => x.name === name)?.id });
   const mHref = (key: string, label: string) => (key.startsWith("name:") ? txnLink({}, { month, q: label }) : `/spending/suppliers/${key}?month=${month}`);
   const gaps = cov.filter((a) => a.cells[0].status === "MISSING" || a.cells[0].status === "PARTIAL");
+  // Fiscal years for the bank book export, from the user's fiscal year start month.
+  const fyStartOf = (m: string) => { const [y, mo] = m.split("-").map(Number); const sy = mo >= user.fiscalYearStartMonth ? y : y - 1; return `${sy}-${String(user.fiscalYearStartMonth).padStart(2, "0")}`; };
+  const firstAll = await prisma.transaction.findFirst({ where: { userId: user.id }, orderBy: { date: "asc" }, select: { date: true } });
+  const fyYears: { start: string; label: string }[] = [];
+  for (let s = fyStartOf(latest); fyYears.length < 6; s = addMonths(s, -12)) {
+    const [y, mo] = s.split("-").map(Number);
+    fyYears.push({ start: s, label: mo === 1 ? String(y) : `${y}-${y + 1} (${monthLabel(s, "short")} – ${monthLabel(addMonths(s, 11), "short")})` });
+    if (!firstAll || s <= monthKey(firstAll.date)) break;
+  }
+  const missingNumbers = accounts.length ? await prisma.account.count({ where: { userId: user.id, bookNumber: null } }) : 0;
+  const needsSetup = [
+    ...(!user.companyName ? ["add your company name"] : []),
+    ...(user.fiscalYearStartMonth === 1 ? ["set your fiscal year start if it isn't January"] : []),
+    ...(missingNumbers ? [`add the account number to show for ${missingNumbers} account${missingNumbers === 1 ? "" : "s"}`] : []),
+  ];
 
   // Trends
   const series = monthlySeries(hist.txns, months);
@@ -78,6 +94,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         <a className="btn-secondary print:hidden" href={`/api/export?month=${month}`}><Download className="h-4 w-4" /> Export {monthLabel(month, "short")}</a>
         <PrintButton />
       </>} />
+
+      <div className="mb-6 print:hidden"><BankBookExport years={fyYears} defaultStart={fyYears[0]?.start ?? fyStartOf(latest)} needsSetup={needsSetup} /></div>
 
       {gaps.length > 0 && <div className="mb-4"><Notice tone="amber">This month may be incomplete: {gaps.map((g) => g.name).join(", ")} {gaps.length === 1 ? "doesn't" : "don't"} have a full statement for {monthLabel(month)}. Compare it with other months with care.</Notice></div>}
 

@@ -58,6 +58,17 @@ export async function setModeAction(f: FormData) {
   refresh();
 }
 
+export async function saveCompanyAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const u = await requireUser();
+  const companyName = str(f, "companyName").slice(0, 120) || null;
+  const month = Number(str(f, "fiscalYearStartMonth"));
+  if (!(month >= 1 && month <= 12)) return { error: "Choose the month your fiscal year starts." };
+  await prisma.user.update({ where: { id: u.id }, data: { companyName, fiscalYearStartMonth: month } });
+  await audit(prisma, u.id, "User", u.id, "company.update", { companyName: u.companyName, fiscalYearStartMonth: u.fiscalYearStartMonth }, { companyName, fiscalYearStartMonth: month });
+  refresh();
+  return { ok: true, message: "Saved." };
+}
+
 export async function setBaseCurrencyAction(f: FormData) {
   const u = await requireUser();
   const c = str(f, "currency");
@@ -102,7 +113,8 @@ export async function saveAccountAction(_: ActionState, f: FormData): Promise<Ac
   const opening = str(f, "openingBalance") ? parseAmountToCents(str(f, "openingBalance")) : null;
   const openingDate = str(f, "openingBalanceDate") ? new Date(`${str(f, "openingBalanceDate")}T00:00:00Z`) : null;
   const id = str(f, "id");
-  const data = { ...parsed.data, mask: parsed.data.mask ?? null, openingBalanceCents: opening, openingBalanceDate: openingDate, status: (str(f, "status") === "CLOSED" ? "CLOSED" : "ACTIVE") as "CLOSED" | "ACTIVE" };
+  const bookNumber = str(f, "bookNumber").replace(/[^\w -]/g, "").slice(0, 20) || null;
+  const data = { ...parsed.data, mask: parsed.data.mask ?? null, bookNumber, openingBalanceCents: opening, openingBalanceDate: openingDate, status: (str(f, "status") === "CLOSED" ? "CLOSED" : "ACTIVE") as "CLOSED" | "ACTIVE" };
   if (id) {
     const before = await prisma.account.findFirst({ where: { id, userId: u.id } });
     if (!before) return { error: "Account not found." };
@@ -272,9 +284,14 @@ export async function updateCategoryAction(_: ActionState, f: FormData): Promise
   const u = await requireUser();
   const c = await prisma.category.findFirst({ where: { id: str(f, "id"), userId: u.id } });
   if (!c) return { error: "Category not found." };
-  const data = { ledgerCode: str(f, "ledgerCode") || null, taxTreatment: str(f, "taxTreatment") || null };
-  await prisma.category.update({ where: { id: c.id }, data });
-  await audit(prisma, u.id, "Category", c.id, "category.update", { ledgerCode: c.ledgerCode, taxTreatment: c.taxTreatment }, data);
+  const name = str(f, "name").slice(0, 60);
+  const data = { ledgerCode: str(f, "ledgerCode") || null, taxTreatment: str(f, "taxTreatment") || null, bookCode: str(f, "bookCode").slice(0, 12) || null, ...(name ? { name } : {}) };
+  try {
+    await prisma.category.update({ where: { id: c.id }, data });
+  } catch {
+    return { error: "Another category here already has that name." };
+  }
+  await audit(prisma, u.id, "Category", c.id, "category.update", { name: c.name, ledgerCode: c.ledgerCode, taxTreatment: c.taxTreatment, bookCode: c.bookCode }, data);
   refresh();
   return { ok: true, message: "Saved." };
 }
@@ -286,8 +303,17 @@ export async function addRuleAction(_: ActionState, f: FormData): Promise<Action
   if (pattern.length < 2 || !cat) return { error: "Enter some words to match and choose a category." };
   const r = await prisma.categoryRule.create({ data: { userId: u.id, pattern, categoryId: cat.id } });
   await audit(prisma, u.id, "CategoryRule", r.id, "rule.create", undefined, r);
+  // Also apply it to transactions already imported, except ones the user categorised themselves.
+  const matches = await prisma.transaction.findMany({
+    where: { userId: u.id, categoryConfirmed: false, OR: [{ description: { contains: pattern, mode: "insensitive" } }, { originalDescription: { contains: pattern, mode: "insensitive" } }, { merchant: { name: { contains: pattern, mode: "insensitive" } } }] },
+    select: { id: true, categoryId: true },
+  });
+  for (const t of matches) {
+    await prisma.transaction.update({ where: { id: t.id }, data: { categoryId: cat.id, categorySource: "RULE", categoryConfidence: 1 } });
+    await audit(prisma, u.id, "Transaction", t.id, "category.reclassify", { categoryId: t.categoryId }, { categoryId: cat.id, rule: r.id });
+  }
   refresh();
-  return { ok: true, message: `New transactions containing "${pattern}" will go to ${cat.name}.` };
+  return { ok: true, message: `Transactions containing "${pattern}" now go to ${cat.name}${matches.length ? `, including ${matches.length} already imported` : ""}.` };
 }
 
 export async function deleteRuleAction(f: FormData) {

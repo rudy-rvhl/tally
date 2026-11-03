@@ -110,6 +110,10 @@ model User {
   passwordHash String
   mode         ExperienceMode @default(SIMPLE)
   baseCurrency String         @default("CAD")
+  /// Legal name printed on exported books, e.g. "Example Holdings Inc."
+  companyName  String?
+  /// First month of the fiscal year (1 = January … 8 = August)
+  fiscalYearStartMonth Int    @default(1)
   createdAt    DateTime       @default(now())
 
   sessions      Session[]
@@ -145,6 +149,8 @@ model Account {
   type                AccountType
   currency            String        @default("CAD")
   mask                String? // last 4 digits only; full numbers are never stored
+  /// Account number as it should appear on exported books (sheet name and "Acc#"), e.g. "123456"
+  bookNumber          String?
   openingBalanceCents Int?
   openingBalanceDate  DateTime?
   ownership           Ownership     @default(BUSINESS)
@@ -241,6 +247,8 @@ model Category {
   kind         CategoryKind @default(EXPENSE)
   taxTreatment String? // e.g. "Fully deductible", "50% meals", "Not deductible"
   ledgerCode   String? // chart-of-accounts code used in Accountant View
+  /// Code printed in the "#" column of the exported bank book (your accountant's code), e.g. "5790"
+  bookCode     String?
   isSystem     Boolean      @default(false)
   createdAt    DateTime     @default(now())
 

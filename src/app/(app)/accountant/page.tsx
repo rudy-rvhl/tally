@@ -159,13 +159,15 @@ async function Chart({ userId }: { userId: string }) {
       <Card title="Category mapping and tax treatment" subtitle="Each expense category posts to a ledger account. Tax treatment is the default for its transactions." padded={false}>
         <div className="max-h-[40rem] overflow-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-slate-50"><tr><th className="th">Category</th><th className="th">Ledger code</th><th className="th">Tax treatment</th><th className="th" /></tr></thead>
+            <thead className="sticky top-0 bg-slate-50"><tr><th className="th">Category</th><th className="th">Name, bank-book # · ledger code · tax treatment</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
               {cats.map((c) => (
                 <tr key={c.id}><td className="td">{c.parent ? <span className="text-slate-400">{c.parent.name} › </span> : null}<span className="font-medium">{c.name}</span></td>
-                  <td className="td" colSpan={3}>
+                  <td className="td">
                     <ActionForm action={updateCategoryAction} className="flex flex-wrap gap-2">
                       <input type="hidden" name="id" value={c.id} />
+                      <input name="name" defaultValue={c.name} className="input w-40 py-1.5 text-xs" aria-label="Category name" />
+                      <input name="bookCode" defaultValue={c.bookCode ?? ""} className="input w-20 py-1.5 text-xs" placeholder="#" aria-label="Bank book code" title="Code in the # column of the Excel bank book" />
                       <select name="ledgerCode" defaultValue={c.ledgerCode ?? ""} className="input w-44 py-1.5 text-xs" aria-label="Ledger code"><option value="">—</option>{ledger.map((l) => <option key={l.code} value={l.code}>{l.code} {l.name}</option>)}</select>
                       <input name="taxTreatment" defaultValue={c.taxTreatment ?? ""} className="input w-56 py-1.5 text-xs" placeholder="e.g. 50% deductible" aria-label="Tax treatment" />
                       <button className="btn-ghost btn-sm">Save</button>

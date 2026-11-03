@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { ActionForm } from "@/components/ActionForm";
 import { CategoryOptions } from "@/components/CategorySelect";
-import { addCategoryAction, addRuleAction, combineMerchantsAction, deleteRuleAction, saveRateAction, setBaseCurrencyAction, setModeAction } from "@/app/actions";
+import { addCategoryAction, addRuleAction, combineMerchantsAction, deleteRuleAction, saveCompanyAction, saveRateAction, setBaseCurrencyAction, setModeAction } from "@/app/actions";
 import { aiEnabled } from "@/lib/services/ai";
 import { monthKey } from "@/lib/engine/dates";
 
@@ -40,6 +40,18 @@ export default async function SettingsPage() {
             <button className="btn-secondary">Save</button>
           </form>
           <p className="mt-4 text-sm text-slate-500">AI help with questions: {aiEnabled() ? <Badge tone="green">On</Badge> : <Badge>Off</Badge>} {aiEnabled() ? "AI only interprets your question. All amounts are calculated from your data." : "Questions are understood with built-in rules. Set ANTHROPIC_API_KEY on the server to enable AI interpretation."}</p>
+        </Card>
+
+        <Card title="Company" subtitle="Printed on the bank book you download for your accountant (Reports → Bank book).">
+          <div id="company" />
+          <ActionForm action={saveCompanyAction} className="grid gap-3 sm:grid-cols-[1fr_12rem_auto] sm:items-end">
+            <div><label className="label" htmlFor="companyName">Company name</label><input id="companyName" name="companyName" className="input" defaultValue={user.companyName ?? ""} placeholder="e.g. Example Holdings Inc." /></div>
+            <div><label className="label" htmlFor="fy">Fiscal year starts in</label>
+              <select id="fy" name="fiscalYearStartMonth" className="input" defaultValue={user.fiscalYearStartMonth}>
+                {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select></div>
+            <button className="btn-secondary">Save</button>
+          </ActionForm>
         </Card>
 
         <Card title="Exchange rates" subtitle={`Amounts in other currencies are converted to ${user.baseCurrency} only with a rate you enter. Without one, they're left out of totals and we tell you.`}>

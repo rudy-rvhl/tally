@@ -42,6 +42,11 @@ export function AccountForm({ account, next }: { account?: Account; next?: strin
         <input className="input" id="mask" name="mask" inputMode="numeric" maxLength={4} defaultValue={account?.mask ?? ""} placeholder="1234" />
         <p className="mt-1 text-xs text-slate-500">Helps us check you&apos;re importing into the right account. We never store full numbers.</p>
       </div>
+      <div>
+        <label className="label" htmlFor="bookNumber">Account number for reports <span className="font-normal text-slate-400">(optional)</span></label>
+        <input className="input" id="bookNumber" name="bookNumber" defaultValue={account?.bookNumber ?? ""} placeholder="e.g. 123456 or 0001" />
+        <p className="mt-1 text-xs text-slate-500">Used as the sheet name and &quot;Acc#&quot; in the Excel bank book.</p>
+      </div>
       <details className="sm:col-span-2" open={!!account?.openingBalanceCents}>
         <summary className="cursor-pointer text-sm font-medium text-slate-600">Starting balance (optional)</summary>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">

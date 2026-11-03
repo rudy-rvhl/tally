@@ -288,6 +288,34 @@ check(await page.isVisible("text=/loan payment was \\$3,460.00 of interest and \
 await go(`${BASE}/accounts/${multiId}`);
 check(await page.isVisible("text=Matches your statement"), "Desjardins statement reconciles");
 
+// 11e. Excel bank book for the accountant
+await go(`${BASE}/settings`);
+await page.fill("#companyName", "Exemple Immobilier Inc.");
+await page.selectOption("#fy", "8");
+await page.click("form:has(#companyName) button:has-text('Save')");
+await page.waitForSelector("text=Saved.", { timeout: 15000 });
+await go(`${BASE}/reports?month=2026-10`);
+check(await page.isVisible("text=Bank book for your accountant"), "bank book download offered on Reports");
+const fyStart = await page.locator("#bb-start").inputValue();
+check(fyStart === "2026-08", `fiscal year follows the August start (got ${fyStart})`);
+const bb = await page.request.get(`${BASE}/api/export/bankbook?start=2026-08&detail=grouped`);
+check(bb.ok() && /accounting_2026-2027\.xlsx/.test(bb.headers()["content-disposition"] ?? ""), "bank book downloads as accounting_2026-2027.xlsx");
+{
+  const { createRequire: cr } = await import("node:module");
+  const ExcelJS = cr(path.join(here, "..", "package.json"))("exceljs");
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(Buffer.from(await bb.body()));
+  const sheets = wb.worksheets.map((w) => w.name);
+  check(sheets[0] === "SUMMARY" && sheets.length >= 8, `one sheet per account plus SUMMARY (${sheets.join(", ")})`);
+  const ws = wb.getWorksheet(sheets.find((n) => n !== "SUMMARY"));
+  const hdr = [1, 2, 3, 4, 5, 6, 7, 8].map((c) => ws.getCell(4, c).value);
+  check(JSON.stringify(hdr) === JSON.stringify(["Date", "#", "Name", "Description", "inv. #", "Debit", "Credit", "Balance"]), "columns match the accountant's template");
+  check(ws.getCell(1, 1).value === "Exemple Immobilier Inc.", "company name printed on each block");
+  const s = wb.getWorksheet("SUMMARY");
+  check(String(s.getCell("A1").value).startsWith("SUMMARY 2026-2027 EXEMPLE IMMOBILIER INC."), "SUMMARY title");
+  check(typeof s.getCell("B4").value === "object" && /!F\d+$/.test(s.getCell("B4").value.formula), "SUMMARY totals are live formulas into each sheet");
+}
+
 // 12. Export
 const resp = await page.request.get(`${BASE}/api/export?month=2026-10`);
 const csv = await resp.text();
