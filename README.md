@@ -35,6 +35,12 @@ Every total can be clicked through to the transactions behind it.
   it never produces the numbers.
 - **Accountant mode:** general journal and trial balance from the same ledger, manual journal
   entries, chart of accounts with category mapping and tax treatment, splits, and the full audit log.
+- **Bank book for your accountant (Excel):** Reports → *Bank book*. It has one sheet per account and one
+  block per month with *Date · # · Name · Description · inv. # · Debit · Credit · Balance*, plus opening and
+  closing balances, yearly `=SUM` totals and a SUMMARY sheet linked to them. The fiscal year start, company
+  name, the account number shown on each sheet (Accounts) and the "#" codes (Accountant View → Chart of
+  accounts) are all configurable. Lines are summarised per supplier per month (rent as one line, mortgage as
+  Interest and Capital), or exported one per transaction.
 - **Currencies:** CAD and USD accounts keep their own currency. Conversion only uses exchange rates
   you enter. Without one, those amounts are left out of totals and the app tells you.
 
@@ -45,8 +51,7 @@ Requirements: Node 22+, PostgreSQL 14+.
 ```bash
 npm install
 cp .env.example .env          # set DATABASE_URL and ENCRYPTION_KEY (command to generate it is in the file)
-npx prisma migrate deploy
-npm run dev                   # http://localhost:3000
+npm run dev                   # http://localhost:3000 (applies database updates automatically)
 ```
 
 Create an account, add a bank account or card, then import a statement. Fictional sample

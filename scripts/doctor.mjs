@@ -97,8 +97,15 @@ if (!PSQL) {
   if (test.status === 0) {
     ok(`Connected as ${test.stdout.trim()}.`);
     const t = run(PSQL, ["-h", conn.host, "-p", conn.port, "-U", conn.user, "-d", conn.db, "-tAc", "select count(*) from information_schema.tables where table_name='Session'"], { env });
-    if (t.stdout?.trim() === "1") ok("Tables exist.");
-    else { bad("The tables haven't been created."); info("Fix: npx prisma migrate deploy"); if (FIX) execFileSync("npx", ["prisma", "migrate", "deploy"], { stdio: "inherit" }); }
+    if (t.stdout?.trim() === "1") {
+      ok("Tables exist.");
+      // New versions add columns; `prisma migrate status` exits non-zero when updates are pending.
+      const st = run("npx", ["prisma", "migrate", "status"], { env: process.env });
+      if (st.status === 0) ok("Database is up to date.");
+      else if (FIX) { console.log("\n  Applying database updates..."); execFileSync("npx", ["prisma", "migrate", "deploy"], { stdio: "inherit" }); ok("Database updated."); }
+      else { bad("The database needs an update for the latest version."); info("Fix: npm run doctor -- --fix"); }
+      if (FIX) { execFileSync("npx", ["prisma", "generate"], { stdio: "ignore" }); ok("Database library regenerated. Restart the app: Ctrl+C, then npm run dev."); }
+    } else { bad("The tables haven't been created."); info("Fix: npx prisma migrate deploy"); if (FIX) execFileSync("npx", ["prisma", "migrate", "deploy"], { stdio: "inherit" }); }
   } else {
     const lines = (test.stderr || "").trim().split("\n").map((l) => l.trim()).filter(Boolean);
     const msg = (lines.find((l) => /FATAL|error/i.test(l)) ?? lines[0] ?? "unknown error").replace(/^psql: (error: )?/, "");

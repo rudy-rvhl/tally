@@ -15,7 +15,10 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "postinstall": "prisma generate",
-    "doctor": "node scripts/doctor.mjs"
+    "doctor": "node scripts/doctor.mjs",
+    "predev": "prisma generate && prisma migrate deploy",
+    "prestart": "prisma migrate deploy",
+    "prebuild": "prisma generate"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
