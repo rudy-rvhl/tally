@@ -5,6 +5,7 @@ import { formatDate, isoDate } from "@/lib/engine/dates";
 import { formatMoney } from "@/lib/engine/money";
 import { ActionForm } from "./ActionForm";
 import { adjustmentAction, recheckStatementAction } from "@/app/actions";
+import { ServerActionForm } from "@/components/ServerActionForm";
 
 export async function ReconciliationCard({ userId, statementId, accountant }: { userId: string; statementId: string; accountant: boolean }) {
   const { statement: st, result: r } = await statementResult(userId, statementId);
@@ -36,7 +37,7 @@ export async function ReconciliationCard({ userId, statementId, accountant }: { 
         </div>
       )}
       <div className="mt-3 flex flex-wrap gap-2">
-        <form action={recheckStatementAction}><input type="hidden" name="statementId" value={st.id} /><button className="btn-secondary btn-sm">Check again</button></form>
+        <ServerActionForm action={recheckStatementAction}><input type="hidden" name="statementId" value={st.id} /><button className="btn-secondary btn-sm">Check again</button></ServerActionForm>
         {!r.balanced && accountant && (
           <ActionForm action={adjustmentAction} className="flex flex-1 flex-wrap gap-2">
             <input type="hidden" name="statementId" value={st.id} />

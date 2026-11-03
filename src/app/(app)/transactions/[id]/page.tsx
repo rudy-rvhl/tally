@@ -12,6 +12,7 @@ import { BackLink } from "@/components/BackLink";
 import { ActionForm } from "@/components/ActionForm";
 import { CategoryOptions } from "@/components/CategorySelect";
 import { excludeAction, receiptAction, restoreAction, setCategoryAction, setDetailsAction, setKindAction, setMerchantAction, splitAction, unlinkTransferAction } from "@/app/actions";
+import { ServerActionForm } from "@/components/ServerActionForm";
 
 const SOURCE_LABEL: Record<string, string> = { USER: "You chose this", RULE: "From one of your rules", HISTORY: "Based on how you categorised this supplier before", MERCHANT: "Suggested for this supplier", PATTERN: "Suggested from the description", AI: "Suggested by AI", NONE: "Not categorised yet" };
 
@@ -46,7 +47,7 @@ export default async function TxnDetail({ params }: { params: Promise<{ id: stri
         actions={<div className="text-right"><Money cents={t.amountCents} currency={t.currency} colored className="text-3xl font-bold" /><div className="text-xs text-slate-500">{t.amountCents < 0 ? "Money out" : "Money in"} · {t.currency}</div></div>} />
 
       {t.excluded && (
-        <div className="mb-4"><Notice tone="red" action={<form action={restoreAction}><input type="hidden" name="txnId" value={t.id} /><button className="btn-secondary btn-sm">Restore it</button></form>}>
+        <div className="mb-4"><Notice tone="red" action={<ServerActionForm action={restoreAction}><input type="hidden" name="txnId" value={t.id} /><button className="btn-secondary btn-sm">Restore it</button></ServerActionForm>}>
           This transaction is excluded from all totals ({t.excludedReason ?? "marked as a duplicate"}). It's kept for your records and can be restored at any time.
         </Notice></div>
       )}
@@ -122,7 +123,7 @@ export default async function TxnDetail({ params }: { params: Promise<{ id: stri
                   <span>{formatDate(l.date)} · {l.account.name} · {l.description}</span><Money cents={l.amountCents} currency={l.currency} colored />
                 </Link>
               ))}
-              <form action={unlinkTransferAction} className="mt-2"><input type="hidden" name="groupId" value={t.transferGroupId!} /><button className="btn-ghost btn-sm">These aren&apos;t the same money. Unlink them</button></form>
+              <ServerActionForm action={unlinkTransferAction} className="mt-2"><input type="hidden" name="groupId" value={t.transferGroupId!} /><button className="btn-ghost btn-sm">These aren&apos;t the same money. Unlink them</button></ServerActionForm>
             </Card>
           )}
 
@@ -179,7 +180,7 @@ export default async function TxnDetail({ params }: { params: Promise<{ id: stri
           {!t.excluded && (
             <Card title="Is this a duplicate?">
               <p className="mb-3 text-sm text-slate-600">If this purchase appears twice, mark this copy as a duplicate. It&apos;ll be left out of every total but kept for your records, so you can undo it later.</p>
-              <form action={excludeAction}><input type="hidden" name="txnId" value={t.id} /><input type="hidden" name="reason" value="Marked as a duplicate" /><button className="btn-danger btn-sm">Mark as duplicate</button></form>
+              <ServerActionForm action={excludeAction}><input type="hidden" name="txnId" value={t.id} /><input type="hidden" name="reason" value="Marked as a duplicate" /><button className="btn-danger btn-sm">Mark as duplicate</button></ServerActionForm>
             </Card>
           )}
 

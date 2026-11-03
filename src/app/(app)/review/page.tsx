@@ -7,6 +7,7 @@ import { Card, EmptyState, Money, PageHeader, Badge } from "@/components/ui";
 import { ActionForm } from "@/components/ActionForm";
 import { CategoryOptions } from "@/components/CategorySelect";
 import { reviewAction, setCategoryAction, rerunMatchingAction } from "@/app/actions";
+import { ServerActionForm } from "@/components/ServerActionForm";
 
 export const metadata = { title: "Review" };
 
@@ -43,13 +44,13 @@ export default async function ReviewPage() {
     );
   };
   const Btn = ({ item, action, children, primary }: { item: string; action: string; children: React.ReactNode; primary?: boolean }) => (
-    <form action={reviewAction}><input type="hidden" name="itemId" value={item} /><input type="hidden" name="action" value={action} /><button className={primary ? "btn-primary btn-sm" : "btn-secondary btn-sm"}>{children}</button></form>
+    <ServerActionForm action={reviewAction}><input type="hidden" name="itemId" value={item} /><input type="hidden" name="action" value={action} /><button className={primary ? "btn-primary btn-sm" : "btn-secondary btn-sm"}>{children}</button></ServerActionForm>
   );
 
   return (
     <>
       <PageHeader title="Transactions to review" subtitle={items.length ? `${items.length} item${items.length === 1 ? "" : "s"} need a quick look. Most take one click.` : "Everything is sorted."}
-        actions={<form action={rerunMatchingAction}><button className="btn-secondary">Look for transfers again</button></form>} />
+        actions={<ServerActionForm action={rerunMatchingAction}><button className="btn-secondary">Look for transfers again</button></ServerActionForm>} />
       {!items.length && (
         <Card><EmptyState icon={<CheckCircle2 className="h-6 w-6" />} title="You're all caught up" body={resolved ? `You've reviewed ${resolved} item${resolved === 1 ? "" : "s"} so far. New items appear here after each import.` : "When we're unsure about something in an import, we'll ask you here."} action={<Link className="btn-secondary" href="/">Back to overview</Link>} /></Card>
       )}

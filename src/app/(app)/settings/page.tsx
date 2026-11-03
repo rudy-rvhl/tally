@@ -6,6 +6,7 @@ import { CategoryOptions } from "@/components/CategorySelect";
 import { addCategoryAction, addRuleAction, combineMerchantsAction, deleteRuleAction, saveCompanyAction, saveRateAction, setBaseCurrencyAction, setModeAction } from "@/app/actions";
 import { aiEnabled } from "@/lib/services/ai";
 import { monthKey } from "@/lib/engine/dates";
+import { ServerActionForm } from "@/components/ServerActionForm";
 
 export const metadata = { title: "Settings" };
 
@@ -26,19 +27,19 @@ export default async function SettingsPage() {
       <PageHeader title="Settings" />
       <div className="grid gap-6 lg:grid-cols-2">
         <Card title="How LedgerIQ looks" subtitle="Both views use exactly the same numbers.">
-          <form action={setModeAction} className="grid gap-3 sm:grid-cols-2">
+          <ServerActionForm action={setModeAction} className="grid gap-3 sm:grid-cols-2">
             {[["SIMPLE", "Simple", "Everyday language. Recommended for business owners."], ["ACCOUNTANT", "Accountant", "Adds reconciliation tools, journal entries, splits, tax treatment and the audit log."]].map(([v, l, d]) => (
               <button key={v} name="mode" value={v} className={`rounded-xl border p-4 text-left transition ${user.mode === v ? "border-brand-500 bg-brand-50 ring-2 ring-brand-100" : "border-slate-200 hover:border-slate-300"}`}>
                 <div className="font-semibold">{l} {user.mode === v && <Badge tone="blue">On</Badge>}</div>
                 <div className="mt-1 text-sm text-slate-600">{d}</div>
               </button>
             ))}
-          </form>
-          <form action={setBaseCurrencyAction} className="mt-5 flex items-end gap-2">
+          </ServerActionForm>
+          <ServerActionForm action={setBaseCurrencyAction} className="mt-5 flex items-end gap-2">
             <div className="flex-1"><label className="label" htmlFor="bc">Report everything in</label>
               <select id="bc" name="currency" defaultValue={user.baseCurrency} className="input"><option value="CAD">Canadian dollars (CAD)</option><option value="USD">US dollars (USD)</option></select></div>
             <button className="btn-secondary">Save</button>
-          </form>
+          </ServerActionForm>
           <p className="mt-4 text-sm text-slate-500">AI help with questions: {aiEnabled() ? <Badge tone="green">On</Badge> : <Badge>Off</Badge>} {aiEnabled() ? "AI only interprets your question. All amounts are calculated from your data." : "Questions are understood with built-in rules. Set ANTHROPIC_API_KEY on the server to enable AI interpretation."}</p>
         </Card>
 
@@ -91,7 +92,7 @@ export default async function SettingsPage() {
             {rules.map((r) => (
               <li key={r.id} className="flex items-center justify-between gap-2 py-2">
                 <span>“{r.pattern}” → <strong>{r.category.parent ? `${r.category.parent.name} › ` : ""}{r.category.name}</strong> {r.createdFrom === "CORRECTION" && <Badge>from your correction</Badge>}</span>
-                <form action={deleteRuleAction}><input type="hidden" name="id" value={r.id} /><button className="btn-ghost btn-sm text-red-600">Remove</button></form>
+                <ServerActionForm action={deleteRuleAction}><input type="hidden" name="id" value={r.id} /><button className="btn-ghost btn-sm text-red-600">Remove</button></ServerActionForm>
               </li>
             ))}
             {!rules.length && <li className="py-2 text-slate-500">No rules yet. They&apos;re also created when you choose “Always” while fixing a category.</li>}

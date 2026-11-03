@@ -11,6 +11,7 @@ import { MonthPicker } from "@/components/MonthPicker";
 import { ReconciliationCard } from "@/components/ReconciliationCard";
 import { ActionForm } from "@/components/ActionForm";
 import { journalAction, saveStatementAction, setModeAction, updateCategoryAction } from "@/app/actions";
+import { ServerActionForm } from "@/components/ServerActionForm";
 
 export const metadata = { title: "Accountant View" };
 const TABS = [["reconciliation", "Reconciliation"], ["journal", "Journal & trial balance"], ["chart", "Chart of accounts & tax"], ["audit", "Audit log"]] as const;
@@ -22,7 +23,7 @@ export default async function AccountantPage({ searchParams }: { searchParams: P
   if (user.mode !== "ACCOUNTANT") {
     return (
       <Card><EmptyState title="Accountant View is turned off" body="It adds reconciliation tools, journal entries, the chart of accounts, tax treatment and the full audit log. It uses the same numbers as the simple view."
-        action={<form action={setModeAction}><input type="hidden" name="mode" value="ACCOUNTANT" /><button className="btn-primary">Turn on Accountant View</button></form>} /></Card>
+        action={<ServerActionForm action={setModeAction}><input type="hidden" name="mode" value="ACCOUNTANT" /><button className="btn-primary">Turn on Accountant View</button></ServerActionForm>} /></Card>
     );
   }
   const tab = TABS.find(([t]) => t === sp.tab)?.[0] ?? "reconciliation";

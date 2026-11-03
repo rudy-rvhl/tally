@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useActionState, useEffect } from "react";
+import { startTransition, useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { goTo } from "./navigate";
 import type { ActionState } from "@/app/actions";
@@ -10,7 +10,7 @@ export function AuthForm({ mode, action }: { mode: "login" | "register"; action:
   const router = useRouter();
   useEffect(() => { if (state.redirectTo) goTo(router, state.redirectTo); }, [state, router]);
   return (
-    <form action={formAction} className="space-y-4">
+    <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); const data = new FormData(e.currentTarget); startTransition(() => formAction(data)); }}>
       {mode === "register" && (
         <div>
           <label className="label" htmlFor="name">Your name</label>

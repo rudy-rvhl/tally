@@ -321,6 +321,15 @@ const resp = await page.request.get(`${BASE}/api/export?month=2026-10`);
 const csv = await resp.text();
 check(resp.ok() && csv.split("\n").length > 30, "CSV export works");
 
+// 12b. Header buttons: switch view mode, then sign out
+await go(`${BASE}/`);
+const modeBefore = await page.locator("header button[title^='Switch between']").locator("span.bg-violet-600").count();
+await page.click("header button[title^='Switch between']");
+await page.waitForFunction((was) => document.querySelectorAll("header button[title^='Switch between'] span.bg-violet-600").length !== was, modeBefore, { timeout: 15000 });
+check(true, "header Simple/Accountant switch works");
+await page.click("header button[title^='Switch between']"); // back to the previous mode
+await page.waitForFunction((was) => document.querySelectorAll("header button[title^='Switch between'] span.bg-violet-600").length === was, modeBefore, { timeout: 15000 });
+
 // 13. Mobile layout
 const m = await browser.newContext({ viewport: { width: 390, height: 844 }, storageState: await ctx.storageState() });
 const mp = await m.newPage();
@@ -332,6 +341,10 @@ check(await mp.isVisible("nav.fixed[aria-label=Main] >> text=Review"), "bottom n
 await mp.goto(`${BASE}/transactions?month=2026-10`);
 await mp.screenshot({ path: path.join(SHOTS, "13-mobile-transactions.png"), fullPage: true });
 
+await go(`${BASE}/`);
+await page.click("header button[aria-label='Sign out']");
+await page.waitForURL(/\/login/, { timeout: 15000 });
+check(true, "sign out works");
 await browser.close();
 console.log(failures ? `\n${failures} check(s) failed` : "\nAll checks passed");
 process.exit(failures ? 1 : 0);
