@@ -4,9 +4,8 @@ import { prisma } from "@/lib/db";
 import { Logo } from "@/components/Logo";
 import { SideNav, BottomNav } from "@/components/Nav";
 import { HeaderAsk } from "@/components/HeaderAsk";
-import { logoutAction, setModeAction } from "@/app/actions";
-import { LogOut, Upload } from "lucide-react";
-import { ServerActionForm } from "@/components/ServerActionForm";
+import { Upload } from "lucide-react";
+import { ModeSwitch, SignOut } from "@/components/HeaderActions";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
@@ -22,15 +21,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
           <Link href="/" className="lg:hidden"><Logo compact /></Link>
           <HeaderAsk />
-          <ServerActionForm action={setModeAction} className="hidden sm:block">
-            <input type="hidden" name="mode" value={accountant ? "SIMPLE" : "ACCOUNTANT"} />
-            <button className="rounded-full border border-slate-200 bg-white p-1 text-xs font-semibold" title="Switch between the simple view and the accountant view. Both use the same numbers.">
-              <span className={`inline-block rounded-full px-3 py-1 ${!accountant ? "bg-brand-600 text-white" : "text-slate-500"}`}>Simple</span>
-              <span className={`inline-block rounded-full px-3 py-1 ${accountant ? "bg-violet-600 text-white" : "text-slate-500"}`}>Accountant</span>
-            </button>
-          </ServerActionForm>
+          <ModeSwitch accountant={accountant} />
           <Link href="/import" className="btn-primary px-3 lg:hidden" aria-label="Import a statement"><Upload className="h-4 w-4" /></Link>
-          <ServerActionForm action={logoutAction}><button className="btn-ghost px-2.5" aria-label="Sign out" title="Sign out"><LogOut className="h-4 w-4" /></button></ServerActionForm>
+          <SignOut />
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:pb-12">{children}</main>
