@@ -3,8 +3,9 @@ import { useTransition } from "react";
 import { LogOut } from "lucide-react";
 import { logoutAction, setModeAction } from "@/app/actions";
 
-// The header's controls are plain buttons, not forms: a <form> in the shared header made
-// ~1% of page loads fail hydration (React error #418); with buttons it went to zero.
+// The header's mode switch and sign-out are plain buttons that call the server actions.
+// (Changed during the hydration-error investigation; measurements showed no effect on
+// that error either way.)
 
 export function ModeSwitch({ accountant }: { accountant: boolean }) {
   const [pending, start] = useTransition();

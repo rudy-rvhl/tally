@@ -2,12 +2,12 @@
 import { useTransition } from "react";
 
 /**
- * A form that runs a server action from its own submit handler.
+ * A form that runs a server action from its own submit handler, with a pending state.
+ * The pressed button's name/value is included, like a native submit.
  *
- * Why not `<form action={serverAction}>`? React hydrates forms whose action is a server
- * reference through a special path; in this app (Next.js 15.5) that intermittently failed
- * hydration (React error #418) on about 1% of page loads. Submitting through onSubmit avoids
- * that path entirely. The pressed button's name/value is still included, like a native submit.
+ * Note: this was introduced while investigating an intermittent hydration error (React #418,
+ * a few page loads in 1,000). Controlled measurements later showed it did not change that
+ * error rate, so it is not a fix for it; it is kept because it works and is tested.
  */
 export function ServerActionForm({ action, children, className }: {
   action: (formData: FormData) => void | Promise<void>; children: React.ReactNode; className?: string;
