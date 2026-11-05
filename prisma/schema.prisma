@@ -110,7 +110,7 @@ model User {
   passwordHash String
   mode         ExperienceMode @default(SIMPLE)
   baseCurrency String         @default("CAD")
-  /// Legal name printed on exported books, e.g. "Example Holdings Inc."
+  /// Legacy single company name; companies now live in Company (kept so nothing is lost).
   companyName  String?
   /// First month of the fiscal year (1 = January … 8 = August)
   fiscalYearStartMonth Int    @default(1)
@@ -128,6 +128,42 @@ model User {
   rates         ExchangeRate[]
   ledger        LedgerAccount[]
   journal       JournalEntry[]
+  companies     Company[]
+  buildings     Building[]
+}
+
+/// A business the user keeps books for. Each bank account belongs to one company.
+model Company {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Legal name printed on exported books, e.g. "Example Holdings Inc."
+  name      String
+  createdAt DateTime @default(now())
+
+  buildings Building[]
+  accounts  Account[]
+
+  @@unique([userId, name])
+}
+
+/// A property (or other location) owned by a company. Money is assigned to a building
+/// through its account's building, or per transaction when one account serves several.
+model Building {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+  address   String?
+  createdAt DateTime @default(now())
+
+  accounts     Account[]
+  transactions Transaction[]
+
+  @@unique([companyId, name])
+  @@index([userId])
 }
 
 model Session {
@@ -155,6 +191,11 @@ model Account {
   openingBalanceDate  DateTime?
   ownership           Ownership     @default(BUSINESS)
   status              AccountStatus @default(ACTIVE)
+  companyId           String?
+  company             Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  /// Building this account is used for; empty when it serves the whole company or several buildings.
+  buildingId          String?
+  building            Building?     @relation(fields: [buildingId], references: [id], onDelete: SetNull)
   createdAt           DateTime      @default(now())
 
   transactions Transaction[]
@@ -306,6 +347,9 @@ model Transaction {
   excludedReason      String?
   taxCode             String?
   notes               String?
+  /// Overrides the account's building for this one transaction (e.g. a shared card).
+  buildingId          String?
+  building            Building?            @relation(fields: [buildingId], references: [id], onDelete: SetNull)
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -317,6 +361,7 @@ model Transaction {
   @@index([userId, merchantId])
   @@index([userId, categoryId])
   @@index([transferGroupId])
+  @@index([buildingId])
 }
 
 model Split {

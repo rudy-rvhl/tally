@@ -9,6 +9,7 @@ import { formatMoney } from "@/lib/engine/money";
 import { formatDate, monthLabel } from "@/lib/engine/dates";
 import { Badge, Card, EmptyState, Notice, PageHeader } from "@/components/ui";
 import { isLiability } from "@/lib/engine/classify";
+import { companyTree } from "@/lib/scope";
 
 export const metadata = { title: "Accounts" };
 
@@ -17,7 +18,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const accounts = await prisma.account.findMany({
     where: { userId: user.id }, orderBy: [{ status: "asc" }, { ownership: "asc" }, { name: "asc" }],
-    include: { _count: { select: { transactions: true } }, imports: { orderBy: { createdAt: "desc" }, take: 1 }, statements: { orderBy: { periodEnd: "desc" }, take: 1 } },
+    include: { building: { select: { name: true } }, _count: { select: { transactions: true } }, imports: { orderBy: { createdAt: "desc" }, take: 1 }, statements: { orderBy: { periodEnd: "desc" }, take: 1 } },
   });
   if (!accounts.length) {
     return (
@@ -36,7 +37,11 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
   const firstShown = months.findIndex((_, i) => cov.some((a) => a.cells[i].status !== "NOT_STARTED"));
   const shownMonths = firstShown > 0 ? months.slice(firstShown) : months;
   const offset = months.length - shownMonths.length;
-  const groups = [["BUSINESS", "Business"], ["PERSONAL", "Personal"]] as const;
+  const companies = await companyTree(user.id);
+  // Several companies: one section per company. Otherwise business / personal, as before.
+  const groups: { key: string; label: string; list: typeof accounts }[] = companies.length > 1
+    ? [...companies.map((c) => ({ key: c.id, label: c.name, list: accounts.filter((a) => a.companyId === c.id) })), { key: "none", label: "No company", list: accounts.filter((a) => !companies.some((c) => c.id === a.companyId)) }]
+    : [{ key: "BUSINESS", label: "Business", list: accounts.filter((a) => a.ownership === "BUSINESS") }, { key: "PERSONAL", label: "Personal", list: accounts.filter((a) => a.ownership === "PERSONAL") }];
 
   return (
     <>
@@ -45,11 +50,10 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
         <Link className="btn-primary" href="/import"><Upload className="h-4 w-4" /> Import a statement</Link>
       </>} />
 
-      {groups.map(([own, label]) => {
-        const list = accounts.filter((a) => a.ownership === own);
+      {groups.map(({ key, label, list }) => {
         if (!list.length) return null;
         return (
-          <section key={own} className="mb-8">
+          <section key={key} className="mb-8">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{label}</h2>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {list.map((a) => {
@@ -65,6 +69,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
                         <div className="text-sm text-slate-500">{a.institution}{a.mask ? ` ··${a.mask}` : ""} · {ACCOUNT_TYPE_LABELS[a.type]}</div>
                       </div>
                       {a.currency !== "CAD" && <Badge tone="blue">{a.currency}</Badge>}
+                      {a.building && <Badge>{a.building.name}</Badge>}
                     </div>
                     <div className="mt-4">
                       {b ? (<>

@@ -70,4 +70,7 @@ export interface AnalyticTxn {
   subcategory: string | null;
   categoryId: string | null;
   pending: boolean;
+  /** Effective building (the transaction's own, else its account's). */
+  buildingId?: string | null;
+  companyId?: string | null;
 }

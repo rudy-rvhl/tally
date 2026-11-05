@@ -16,6 +16,7 @@ import { AccountForm } from "@/components/AccountForm";
 import { ReconciliationCard } from "@/components/ReconciliationCard";
 import { ActionForm } from "@/components/ActionForm";
 import { saveStatementAction } from "@/app/actions";
+import { companyTree } from "@/lib/scope";
 
 export default async function AccountPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
@@ -23,18 +24,22 @@ export default async function AccountPage({ params }: { params: Promise<{ id: st
   const a = await prisma.account.findFirst({ where: { id, userId: user.id }, include: { imports: { orderBy: { createdAt: "desc" } }, statements: { orderBy: { periodEnd: "desc" } } } });
   if (!a) notFound();
   const latest = await latestMonth(user.id);
-  const [bal, cov, recent, month] = await Promise.all([
+  const [bal, cov, recent, month, companies] = await Promise.all([
     accountBalance(a),
     accountCoverage(user.id, lastNMonths(latest, 12)),
     prisma.transaction.findMany({ where: { accountId: a.id, userId: user.id }, include: txnInclude, orderBy: { date: "desc" }, take: 15 }),
     loadAnalytic(user, { account: a.id, month: latest }),
+    companyTree(user.id),
   ]);
+  const company = companies.find((c) => c.id === a.companyId);
+  const building = company?.buildings.find((b) => b.id === a.buildingId);
+  const placeLabel = companies.length > 1 || company?.buildings.length ? ` · ${building ? `${building.name} (${company!.name})` : company?.name ?? ""}` : "";
   const s = summarize(month.txns);
   const cells = cov.find((c) => c.accountId === a.id)?.cells ?? [];
   const accountant = user.mode === "ACCOUNTANT";
   return (
     <>
-      <PageHeader back={<BackLink fallback="/accounts" />} title={a.name} subtitle={`${a.institution}${a.mask ? ` ··${a.mask}` : ""} · ${ACCOUNT_TYPE_LABELS[a.type]} · ${a.currency} · ${a.ownership === "BUSINESS" ? "Business" : "Personal"}`}
+      <PageHeader back={<BackLink fallback="/accounts" />} title={a.name} subtitle={`${a.institution}${a.mask ? ` ··${a.mask}` : ""} · ${ACCOUNT_TYPE_LABELS[a.type]} · ${a.currency} · ${a.ownership === "BUSINESS" ? "Business" : "Personal"}${placeLabel}`}
         actions={<><Link className="btn-secondary" href={`/transactions?account=${a.id}`}>All transactions</Link><Link className="btn-primary" href={`/import?account=${a.id}`}><Upload className="h-4 w-4" /> Import statement</Link></>} />
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label={bal?.owed ? "Amount owed" : "Balance"} value={bal ? formatMoney(bal.cents, a.currency) : "Unknown"} hint={bal ? `As of ${formatDate(bal.asOf)}, from the last ${bal.basis}` : "Add a statement balance below"} />
@@ -94,7 +99,7 @@ export default async function AccountPage({ params }: { params: Promise<{ id: st
         <TxnTable rows={recent} accountant={accountant} showAccount={false} />
       </Card>
 
-      <Card title="Account details"><AccountForm account={a} /></Card>
+      <Card title="Account details"><AccountForm account={a} companies={companies} /></Card>
     </>
   );
 }

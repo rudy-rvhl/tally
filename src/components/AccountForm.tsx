@@ -1,11 +1,14 @@
 import type { Account } from "@prisma/client";
+import type { CompanyTree } from "@/lib/scope";
 import { ActionForm } from "./ActionForm";
 import { saveAccountAction } from "@/app/actions";
 import { ACCOUNT_TYPE_LABELS } from "@/lib/services/options";
 
 const INSTITUTIONS = ["Scotiabank", "RBC Royal Bank", "TD Canada Trust", "BMO", "CIBC", "National Bank", "Desjardins", "American Express", "Tangerine", "Other"];
 
-export function AccountForm({ account, next }: { account?: Account; next?: string }) {
+export function AccountForm({ account, next, companies, defaultPlacement }: { account?: Account; next?: string; companies: CompanyTree[]; defaultPlacement?: string }) {
+  const placement = account ? (account.buildingId ? `b:${account.buildingId}` : `c:${account.companyId ?? companies[0]?.id}`) : defaultPlacement ?? `c:${companies[0]?.id}`;
+  const showPlacement = companies.length > 1 || companies.some((c) => c.buildings.length);
   return (
     <ActionForm action={saveAccountAction} className="grid gap-4 sm:grid-cols-2">
       {account && <input type="hidden" name="id" value={account.id} />}
@@ -19,6 +22,20 @@ export function AccountForm({ account, next }: { account?: Account; next?: strin
         <label className="label" htmlFor="name">A name you&apos;ll recognise</label>
         <input className="input" id="name" name="name" defaultValue={account?.name} placeholder="e.g. Business Visa" required />
       </div>
+      {showPlacement ? (
+        <div className="sm:col-span-2">
+          <label className="label" htmlFor="placement">Belongs to</label>
+          <select className="input" id="placement" name="placement" defaultValue={placement}>
+            {companies.map((c) => (
+              <optgroup key={c.id} label={c.name}>
+                <option value={`c:${c.id}`}>{c.name}{c.buildings.length ? " (whole company or several buildings)" : ""}</option>
+                {c.buildings.map((b) => <option key={b.id} value={`b:${b.id}`}>{b.name}</option>)}
+              </optgroup>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">Used for one building only? Choose it. Used for several? Choose the company, then pick the building on each transaction.</p>
+        </div>
+      ) : <input type="hidden" name="placement" value={placement} />}
       <div>
         <label className="label" htmlFor="type">Type of account</label>
         <select className="input" id="type" name="type" defaultValue={account?.type ?? "BUSINESS_CHEQUING"}>

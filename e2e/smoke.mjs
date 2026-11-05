@@ -288,12 +288,71 @@ check(await page.isVisible("text=/loan payment was \\$3,460.00 of interest and \
 await go(`${BASE}/accounts/${multiId}`);
 check(await page.isVisible("text=Matches your statement"), "Desjardins statement reconciles");
 
-// 11e. Excel bank book for the accountant
+// 11e. Companies and buildings: kept apart on screen, all together in the bank book
 await go(`${BASE}/settings`);
-await page.fill("#companyName", "Exemple Immobilier Inc.");
+check(await page.locator("[data-testid=company]").count() === 1, "a new user starts with one company");
+await page.fill("input[id^='co-']", "Exemple Immobilier Inc.");
+await page.click("form:has(input[id^='co-']) button:has-text('Save')");
+await page.waitForSelector("form:has(input[id^='co-']) >> text=Saved.", { timeout: 15000 });
 await page.selectOption("#fy", "8");
-await page.click("form:has(#companyName) button:has-text('Save')");
+await page.click("form:has(#fy) button:has-text('Save')");
+await page.waitForSelector("form:has(#fy) >> text=Saved.", { timeout: 15000 });
+for (const b of ["12 rue Principale", "40 avenue des Érables"]) {
+  await page.fill("[data-testid=company] >> input[placeholder^='New building']", b);
+  await page.click("[data-testid=company] >> button:has-text('Add building')");
+  await page.waitForSelector(`text=${b} added.`, { timeout: 15000 });
+}
+await page.fill("#newCompany", "Exemple Gestion Inc.");
+await page.click("button:has-text('Add company')");
+await page.waitForFunction(() => document.querySelectorAll("[data-testid=company]").length === 2, null, { timeout: 15000 });
+check(true, "companies and buildings added in Settings");
+await shot("18-settings-companies");
+async function place(accountId, label) {
+  await go(`${BASE}/accounts/${accountId}`);
+  await page.selectOption("#placement", { label });
+  await page.click("button:has-text('Save changes')");
+  await page.waitForSelector("text=Saved.", { timeout: 15000 });
+}
+await place(ids.rbc, "12 rue Principale");
+await place(ids.scotia, "40 avenue des Érables");
+await place(ids.td, "Exemple Gestion Inc.");
+// The Amex card is shared: it stays company-wide, and one purchase is assigned to a building.
+await go(`${BASE}/transactions?account=${ids.amex}&month=2026-10&q=AMAZON`);
+await page.click("table tbody tr:has-text('310.45') a");
+await page.waitForSelector("#buildingId", { timeout: 15000 });
+await page.selectOption("#buildingId", { label: "40 avenue des Érables" });
+await page.click("button:has-text('Save building')");
 await page.waitForSelector("text=Saved.", { timeout: 15000 });
+
+const spentNow = async () => money(await page.locator("a:has-text('Money spent')").first().textContent());
+async function viewScope(label) {
+  await page.selectOption("[data-testid=scope-switch]", { label });
+  await page.waitForFunction((l) => document.querySelector("h1")?.textContent?.includes(l), label.replace(" (all)", ""), { timeout: 15000 });
+  await page.waitForLoadState("networkidle");
+}
+await go(`${BASE}/?month=2026-10`);
+const allSpent = await spentNow();
+const rows = await page.locator("[data-testid=scope-breakdown] tbody tr").allTextContents();
+check(rows.length >= 5, `Overview splits the month by company and building (${rows.length} rows)`);
+const companyRows = await page.locator("[data-testid=scope-breakdown] tbody tr:has(span.font-semibold) td:nth-child(2)").allTextContents();
+const companySum = companyRows.map(money).reduce((a, b) => a + b, 0);
+check(companyRows.length === 2 && Math.abs(companySum - allSpent) < 0.005, `company rows add up to the total, nothing doubled (${companySum} vs ${allSpent})`);
+await shot("19-overview-by-building");
+await viewScope("12 rue Principale");
+check(Math.abs((await spentNow()) - oct.rbc) < 0.005, `building 1 shows only its own account's spending (${await spentNow()} vs ${oct.rbc.toFixed(2)})`);
+await viewScope("40 avenue des Érables");
+const b2 = oct.scotia + 310.45;
+check(Math.abs((await spentNow()) - b2) < 0.005, `building 2 = its card + the purchase assigned from the shared card (${await spentNow()} vs ${b2.toFixed(2)})`);
+await go(`${BASE}/spending?month=2026-10`);
+check(await page.isVisible("h1:has-text('40 avenue des Érables')"), "Spending follows the chosen building");
+await viewScope("Exemple Gestion Inc. (all)");
+await go(`${BASE}/?month=2026-10`);
+check(Math.abs((await spentNow()) - oct.td) < 0.005, `second company kept separate (${await spentNow()} vs ${oct.td.toFixed(2)})`);
+await viewScope("All companies");
+check(Math.abs((await spentNow()) - allSpent) < 0.005, "All companies shows everything again");
+await go(`${BASE}/spending?month=2026-10&view=buildings`);
+check(await page.isVisible("[data-testid=scope-breakdown]"), "Spending has a By building view");
+
 await go(`${BASE}/reports?month=2026-10`);
 check(await page.isVisible("text=Bank book for your accountant"), "bank book download offered on Reports");
 const fyStart = await page.locator("#bb-start").inputValue();
@@ -311,15 +370,23 @@ check(bb.ok() && /accounting_2026-2027\.xlsx/.test(bb.headers()["content-disposi
   const hdr = [1, 2, 3, 4, 5, 6, 7, 8].map((c) => ws.getCell(4, c).value);
   check(JSON.stringify(hdr) === JSON.stringify(["Date", "#", "Name", "Description", "inv. #", "Debit", "Credit", "Balance"]), "columns match the accountant's template");
   check(ws.getCell(1, 1).value === "Exemple Immobilier Inc.", "company name printed on each block");
+  const blockCompanies = new Set(wb.worksheets.filter((w) => !["SUMMARY", "BUILDINGS"].includes(w.name)).map((w) => w.getCell(1, 1).value));
+  check(blockCompanies.has("Exemple Immobilier Inc.") && blockCompanies.has("Exemple Gestion Inc."), "one workbook holds both companies, each block with its own company name");
   const s = wb.getWorksheet("SUMMARY");
-  check(String(s.getCell("A1").value).startsWith("SUMMARY 2026-2027 EXEMPLE IMMOBILIER INC."), "SUMMARY title");
-  check(typeof s.getCell("B4").value === "object" && /!F\d+$/.test(s.getCell("B4").value.formula), "SUMMARY totals are live formulas into each sheet");
+  check(String(s.getCell("A1").value).startsWith("SUMMARY 2026-2027 ALL COMPANIES"), "SUMMARY title");
+  const col = (c) => s.getColumn(c).values.map((v) => (v && typeof v === "object" ? v.formula ?? v.result : v));
+  check(col(1).includes("EXEMPLE IMMOBILIER INC.") && col(1).includes("EXEMPLE GESTION INC.") && col(1).includes("TOTAL ALL COMPANIES"), "SUMMARY grouped by company with a grand total");
+  check(col(2).some((f) => typeof f === "string" && /!F\d+$/.test(f)), "SUMMARY totals are live formulas into each sheet");
+  const bs = wb.getWorksheet("BUILDINGS");
+  const names = bs ? bs.getColumn(2).values : [];
+  check(!!bs && names.includes("12 rue Principale") && names.includes("40 avenue des Érables"), "BUILDINGS sheet lists every building's money in and spent");
 }
 
 // 12. Export
 const resp = await page.request.get(`${BASE}/api/export?month=2026-10`);
 const csv = await resp.text();
 check(resp.ok() && csv.split("\n").length > 30, "CSV export works");
+check(csv.split("\n")[0].includes('"Company","Building"') && csv.includes("Exemple Gestion Inc.") && csv.includes("12 rue Principale"), "CSV export includes every company, with Company and Building columns");
 
 // 12b. Header buttons: switch view mode, then sign out
 await go(`${BASE}/`);

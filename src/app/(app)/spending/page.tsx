@@ -12,6 +12,8 @@ import { BarList, Card, EmptyState, PageHeader } from "@/components/ui";
 import { FilterBar } from "@/components/FilterBar";
 import { StackedBars } from "@/components/charts";
 import type { AnalyticTxn } from "@/lib/engine/types";
+import { ScopeBreakdown } from "@/components/ScopeBreakdown";
+import { breakdown, resolveScope } from "@/lib/scope";
 
 export const metadata = { title: "Spending" };
 
@@ -20,6 +22,7 @@ const VIEWS = [
   { id: "categories", label: "By category" },
   { id: "accounts", label: "By account" },
   { id: "months", label: "By month" },
+  { id: "buildings", label: "By building" },
 ] as const;
 
 const RANKS = [
@@ -31,12 +34,14 @@ export default async function SpendingPage({ searchParams }: { searchParams: Pro
   const user = await requireUser();
   const raw = await searchParams;
   const f = readFilters(raw);
-  const view = (VIEWS.find((v) => v.id === raw.view)?.id ?? "suppliers") as (typeof VIEWS)[number]["id"];
+  let view = (VIEWS.find((v) => v.id === raw.view)?.id ?? "suppliers") as (typeof VIEWS)[number]["id"];
   const rank = (RANKS.find((r) => r.id === raw.rank)?.id ?? "total") as (typeof RANKS)[number]["id"];
   const c = user.baseCurrency;
   const options = await filterOptions(user, { show: ["month", "account", "category", "ownership", "institution", "currency"] });
   const scope: Filters = { ...f, kind: "spending" };
-  const { txns } = await loadAnalytic(user, scope);
+  const [{ txns }, where] = await Promise.all([loadAnalytic(user, scope), resolveScope(user.id)]);
+  const split = breakdown(where, txns);
+  const views = VIEWS.filter((v) => v.id !== "buildings" || split.length > 0);
   const total = txns.reduce((a, t) => a + spendOf(t), 0);
   const viewQs = (v: string, extra: Record<string, string | undefined> = {}) => {
     const p = new URLSearchParams(toQuery(f).slice(1));
@@ -44,13 +49,14 @@ export default async function SpendingPage({ searchParams }: { searchParams: Pro
     for (const [k, val] of Object.entries(extra)) { if (val) p.set(k, val); else p.delete(k); }
     return `/spending?${p}`;
   };
+  if (view === "buildings" && !split.length) view = "suppliers";
   const periodLabel = f.month ? monthLabel(f.month) : f.from || f.to ? `${f.from ?? "start"} to ${f.to ?? "today"}` : "all time";
 
   return (
     <>
-      <PageHeader title="Spending" subtitle={<>You spent <strong className="text-slate-900">{formatMoney(total, c)}</strong> {f.month ? "in" : ""} {periodLabel}. Click anything to see the purchases behind it.</>} />
+      <PageHeader title={where.multi ? `Spending · ${where.label}` : "Spending"} subtitle={<>You spent <strong className="text-slate-900">{formatMoney(total, c)}</strong> {f.month ? "in" : ""} {periodLabel}. Click anything to see the purchases behind it.</>} />
       <div className="mb-4 flex gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1" role="tablist">
-        {VIEWS.map((v) => (
+        {views.map((v) => (
           <Link key={v.id} role="tab" aria-selected={view === v.id} href={viewQs(v.id, { rank: undefined })}
             className={clsx("whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold", view === v.id ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900")}>{v.label}</Link>
         ))}
@@ -62,6 +68,10 @@ export default async function SpendingPage({ searchParams }: { searchParams: Pro
         <Suppliers user={user} f={f} txns={txns} rank={rank} viewQs={viewQs} currency={c} />
       ) : view === "categories" ? (
         <Categories userId={user.id} f={f} txns={txns} currency={c} />
+      ) : view === "buildings" ? (
+        <Card padded={false} title={where.scope.type === "all" && where.companies.length > 1 ? "Spending by company and building" : "Spending by building"} subtitle="Click one to see only its spending.">
+          <ScopeBreakdown rows={split} currency={c} href={viewQs("suppliers")} mode="spending" />
+        </Card>
       ) : view === "accounts" ? (
         <Accounts userId={user.id} f={f} txns={txns} currency={c} />
       ) : (

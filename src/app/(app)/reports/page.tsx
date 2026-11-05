@@ -16,6 +16,7 @@ import { InsightList } from "@/components/InsightList";
 import { IncomeVsSpending, MultiLine, StackedBars, TrendChart } from "@/components/charts";
 import { PrintButton } from "@/components/PrintButton";
 import { BankBookExport } from "@/components/BankBookExport";
+import { accountIdsInScope, resolveScope } from "@/lib/scope";
 
 export const metadata = { title: "Reports" };
 
@@ -55,7 +56,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const incomeBySource = groupSpending(cur.txns.filter((t) => t.kind === "INCOME").map((t) => ({ ...t, kind: "PURCHASE" as const, amountCents: -t.amountCents })), byMerchant);
   const catHref = (name: string, m = month) => txnLink({}, { month: m, kind: "spending", category: cats.find((x) => x.name === name)?.id });
   const mHref = (key: string, label: string) => (key.startsWith("name:") ? txnLink({}, { month, q: label }) : `/spending/suppliers/${key}?month=${month}`);
-  const gaps = cov.filter((a) => a.cells[0].status === "MISSING" || a.cells[0].status === "PARTIAL");
+  const scope = await resolveScope(user.id);
+  const inScope = await accountIdsInScope(user.id, scope);
+  const gaps = cov.filter((a) => (!inScope || inScope.has(a.accountId)) && (a.cells[0].status === "MISSING" || a.cells[0].status === "PARTIAL"));
   // Fiscal years for the bank book export, from the user's fiscal year start month.
   const fyStartOf = (m: string) => { const [y, mo] = m.split("-").map(Number); const sy = mo >= user.fiscalYearStartMonth ? y : y - 1; return `${sy}-${String(user.fiscalYearStartMonth).padStart(2, "0")}`; };
   const firstAll = await prisma.transaction.findFirst({ where: { userId: user.id }, orderBy: { date: "asc" }, select: { date: true } });
@@ -67,7 +70,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   }
   const missingNumbers = accounts.length ? await prisma.account.count({ where: { userId: user.id, bookNumber: null } }) : 0;
   const needsSetup = [
-    ...(!user.companyName ? ["add your company name"] : []),
+    ...((await prisma.company.count({ where: { userId: user.id, name: "My company" } })) ? ["add your company name"] : []),
     ...(user.fiscalYearStartMonth === 1 ? ["set your fiscal year start if it isn't January"] : []),
     ...(missingNumbers ? [`add the account number to show for ${missingNumbers} account${missingNumbers === 1 ? "" : "s"}`] : []),
   ];
@@ -89,7 +92,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="Reports" subtitle="An automatic monthly summary, plus trends over time." actions={<>
+      <PageHeader title={scope.multi ? `Reports · ${scope.label}` : "Reports"} subtitle={scope.multi ? `An automatic monthly summary for ${scope.label}, plus trends over time. The Excel bank book below always includes every company and building.` : "An automatic monthly summary, plus trends over time."} actions={<>
         <MonthPicker month={month} basePath="/reports" extra={raw.period ? `&period=${raw.period}` : ""} latest={latest} />
         <a className="btn-secondary print:hidden" href={`/api/export?month=${month}`}><Download className="h-4 w-4" /> Export {monthLabel(month, "short")}</a>
         <PrintButton />

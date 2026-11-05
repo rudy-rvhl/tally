@@ -13,6 +13,8 @@ import { unlinkTransfer, linkTransfers } from "@/lib/services/transfers";
 import { addAdjustment, evaluateStatement } from "@/lib/services/reconciliation";
 import { parseAmountToCents } from "@/lib/engine/money";
 import { clearFailures, isLocked, recordFailure } from "@/lib/ratelimit";
+import { cookies } from "next/headers";
+import { defaultCompany, parseScope, scopeValue, SCOPE_COOKIE } from "@/lib/scope";
 
 export interface ActionState { ok?: boolean; error?: string; message?: string; /** Client navigates here on success. */ redirectTo?: string }
 
@@ -60,13 +62,124 @@ export async function setModeAction(f: FormData) {
 
 export async function saveCompanyAction(_: ActionState, f: FormData): Promise<ActionState> {
   const u = await requireUser();
-  const companyName = str(f, "companyName").slice(0, 120) || null;
   const month = Number(str(f, "fiscalYearStartMonth"));
   if (!(month >= 1 && month <= 12)) return { error: "Choose the month your fiscal year starts." };
-  await prisma.user.update({ where: { id: u.id }, data: { companyName, fiscalYearStartMonth: month } });
-  await audit(prisma, u.id, "User", u.id, "company.update", { companyName: u.companyName, fiscalYearStartMonth: u.fiscalYearStartMonth }, { companyName, fiscalYearStartMonth: month });
+  await prisma.user.update({ where: { id: u.id }, data: { fiscalYearStartMonth: month } });
+  await audit(prisma, u.id, "User", u.id, "fiscalYear.update", { fiscalYearStartMonth: u.fiscalYearStartMonth }, { fiscalYearStartMonth: month });
   refresh();
   return { ok: true, message: "Saved." };
+}
+
+// ---------- companies, buildings and what the screens show
+/** Show everything, one company ("c:<id>") or one building ("b:<id>"). Optionally go to `next` afterwards. */
+export async function setScopeAction(value: string, next?: string) {
+  await requireUser();
+  const v = scopeValue(parseScope(value));
+  (await cookies()).set(SCOPE_COOKIE, v, { path: "/", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 24 * 365 });
+  if (next && next.startsWith("/") && !next.startsWith("//")) redirect(next);
+  refresh();
+}
+
+const nameOf = (f: FormData, k = "name") => str(f, k).replace(/\s+/g, " ").slice(0, 120);
+const isUnique = (e: unknown) => (e as { code?: string }).code === "P2002";
+
+export async function addCompanyAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const u = await requireUser();
+  const name = nameOf(f);
+  if (!name) return { error: "Enter the company's name." };
+  try {
+    const c = await prisma.company.create({ data: { userId: u.id, name } });
+    await audit(prisma, u.id, "Company", c.id, "company.create", undefined, { name });
+  } catch (e) {
+    if (isUnique(e)) return { error: `You already have a company called ${name}.` };
+    throw e;
+  }
+  refresh();
+  return { ok: true, message: `${name} added.` };
+}
+
+export async function renameCompanyAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const u = await requireUser();
+  const id = str(f, "id"), name = nameOf(f);
+  const before = await prisma.company.findFirst({ where: { id, userId: u.id } });
+  if (!before) return { error: "Company not found." };
+  if (!name) return { error: "Enter the company's name." };
+  try { await prisma.company.update({ where: { id }, data: { name } }); } catch (e) { if (isUnique(e)) return { error: `You already have a company called ${name}.` }; throw e; }
+  await audit(prisma, u.id, "Company", id, "company.rename", { name: before.name }, { name });
+  refresh();
+  return { ok: true, message: "Saved." };
+}
+
+export async function deleteCompanyAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const u = await requireUser();
+  const c = await prisma.company.findFirst({ where: { id: str(f, "id"), userId: u.id }, include: { _count: { select: { accounts: true, buildings: true } } } });
+  if (!c) return { error: "Company not found." };
+  if (c._count.accounts || c._count.buildings) return { error: `${c.name} still has ${c._count.accounts} account(s) and ${c._count.buildings} building(s). Move or remove them first.` };
+  if ((await prisma.company.count({ where: { userId: u.id } })) <= 1) return { error: "You need at least one company." };
+  await prisma.company.delete({ where: { id: c.id } });
+  await audit(prisma, u.id, "Company", c.id, "company.delete", { name: c.name }, undefined);
+  refresh();
+  return { ok: true, message: `${c.name} removed.` };
+}
+
+export async function saveBuildingAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const u = await requireUser();
+  const id = str(f, "id"), name = nameOf(f), address = str(f, "address").slice(0, 200) || null;
+  if (!name) return { error: "Enter a name for the building, e.g. its address." };
+  try {
+    if (id) {
+      const before = await prisma.building.findFirst({ where: { id, userId: u.id } });
+      if (!before) return { error: "Building not found." };
+      await prisma.building.update({ where: { id }, data: { name, address } });
+      await audit(prisma, u.id, "Building", id, "building.update", { name: before.name, address: before.address }, { name, address });
+    } else {
+      const company = await prisma.company.findFirst({ where: { id: str(f, "companyId"), userId: u.id } });
+      if (!company) return { error: "Choose which company owns this building." };
+      const b = await prisma.building.create({ data: { userId: u.id, companyId: company.id, name, address } });
+      await audit(prisma, u.id, "Building", b.id, "building.create", undefined, { name, address, company: company.name });
+    }
+  } catch (e) {
+    if (isUnique(e)) return { error: `This company already has a building called ${name}.` };
+    throw e;
+  }
+  refresh();
+  return { ok: true, message: id ? "Saved." : `${name} added.` };
+}
+
+export async function deleteBuildingAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const u = await requireUser();
+  const b = await prisma.building.findFirst({ where: { id: str(f, "id"), userId: u.id }, include: { _count: { select: { accounts: true, transactions: true } } } });
+  if (!b) return { error: "Building not found." };
+  if (b._count.accounts || b._count.transactions) return { error: `${b.name} is still used by ${b._count.accounts} account(s) and ${b._count.transactions} transaction(s). Reassign them first.` };
+  await prisma.building.delete({ where: { id: b.id } });
+  await audit(prisma, u.id, "Building", b.id, "building.delete", { name: b.name }, undefined);
+  refresh();
+  return { ok: true, message: `${b.name} removed.` };
+}
+
+/** Assign a transaction (or every transaction from the same supplier on the same account) to a building. */
+export async function setTxnBuildingAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const u = await requireUser();
+  const t = await prisma.transaction.findFirst({ where: { id: str(f, "txnId"), userId: u.id }, include: { account: { select: { companyId: true, buildingId: true } } } });
+  if (!t) return { error: "Transaction not found." };
+  const raw = str(f, "buildingId");
+  let buildingId: string | null = null;
+  if (raw) {
+    const b = await prisma.building.findFirst({ where: { id: raw, userId: u.id } });
+    if (!b) return { error: "Building not found." };
+    buildingId = b.id;
+  }
+  // Choosing the account's own building is the same as following the account.
+  if (buildingId && buildingId === t.account.buildingId) buildingId = null;
+  const all = str(f, "scope") === "supplier" && t.merchantId;
+  const where = all ? { userId: u.id, accountId: t.accountId, merchantId: t.merchantId } : { id: t.id };
+  const targets = await prisma.transaction.findMany({ where, select: { id: true, buildingId: true } });
+  await prisma.$transaction(async (tx) => {
+    await tx.transaction.updateMany({ where, data: { buildingId } });
+    for (const x of targets) if (x.buildingId !== buildingId) await audit(tx, u.id, "Transaction", x.id, "building.set", { buildingId: x.buildingId }, { buildingId });
+  });
+  refresh();
+  return { ok: true, message: all ? `Updated ${targets.length} transaction${targets.length === 1 ? "" : "s"} from this supplier.` : "Saved." };
 }
 
 export async function setBaseCurrencyAction(f: FormData) {
@@ -114,7 +227,13 @@ export async function saveAccountAction(_: ActionState, f: FormData): Promise<Ac
   const openingDate = str(f, "openingBalanceDate") ? new Date(`${str(f, "openingBalanceDate")}T00:00:00Z`) : null;
   const id = str(f, "id");
   const bookNumber = str(f, "bookNumber").replace(/[^\w -]/g, "").slice(0, 20) || null;
-  const data = { ...parsed.data, mask: parsed.data.mask ?? null, bookNumber, openingBalanceCents: opening, openingBalanceDate: openingDate, status: (str(f, "status") === "CLOSED" ? "CLOSED" : "ACTIVE") as "CLOSED" | "ACTIVE" };
+  // Building wins: it decides the company. Otherwise the chosen company, else the first one.
+  // "placement" is "c:<companyId>" (whole company / several buildings) or "b:<buildingId>".
+  const place = parseScope(str(f, "placement"));
+  const building = place.type === "building" ? await prisma.building.findFirst({ where: { id: place.id, userId: u.id } }) : null;
+  if (place.type === "building" && !building) return { error: "Building not found." };
+  const company = building ? { id: building.companyId } : (place.type === "company" ? await prisma.company.findFirst({ where: { id: place.id, userId: u.id } }) : null) ?? (await defaultCompany(u.id));
+  const data = { ...parsed.data, mask: parsed.data.mask ?? null, bookNumber, openingBalanceCents: opening, openingBalanceDate: openingDate, status: (str(f, "status") === "CLOSED" ? "CLOSED" : "ACTIVE") as "CLOSED" | "ACTIVE", companyId: company.id, buildingId: building?.id ?? null };
   if (id) {
     const before = await prisma.account.findFirst({ where: { id, userId: u.id } });
     if (!before) return { error: "Account not found." };

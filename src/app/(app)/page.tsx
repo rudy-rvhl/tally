@@ -15,6 +15,8 @@ import { AskBar } from "@/components/AskBar";
 import { MonthPicker } from "@/components/MonthPicker";
 import { InsightList } from "@/components/InsightList";
 import { DonutChart, TrendChart } from "@/components/charts";
+import { ScopeBreakdown } from "@/components/ScopeBreakdown";
+import { accountIdsInScope, breakdown, resolveScope } from "@/lib/scope";
 
 export const metadata = { title: "Overview" };
 
@@ -48,13 +50,16 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const prev = addMonths(month, -1);
   const months = lastNMonths(month, 12);
   const yearStart = `${month.slice(0, 4)}-01-01`;
-  const [cur, last, hist, review, cov] = await Promise.all([
+  const [cur, last, hist, review, cov, scope] = await Promise.all([
     loadAnalytic(user, { month }),
     loadAnalytic(user, { month: prev }),
     loadAnalytic(user, { from: isoDate(monthRange(months[0]).start), to: isoDate(monthRange(month).end) }),
     prisma.reviewItem.count({ where: { userId: user.id, status: "OPEN" } }),
     accountCoverage(user.id, [month]),
+    resolveScope(user.id),
   ]);
+  const inScope = await accountIdsInScope(user.id, scope);
+  const split = breakdown(scope, cur.txns);
   const c = user.baseCurrency;
   const s = summarize(cur.txns), p = summarize(last.txns);
   // Start the chart at the first month with data, so it isn't mostly empty.
@@ -71,7 +76,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const recurringTotal = recurringThisMonth.reduce((a, r) => a + r.lastCents, 0);
   const anomalies = detectAnomalies(hist.txns.filter((t) => t.date < monthRange(month).start), cur.txns);
   const insights = [...explainMonth(cur.txns, last.txns, month, prev, c), ...recurringInsights(recurringThisMonth, c), ...anomalyInsights(anomalies, c)];
-  const gaps = cov.filter((a) => a.cells[0].status === "MISSING" || a.cells[0].status === "PARTIAL");
+  const gaps = cov.filter((a) => (!inScope || inScope.has(a.accountId)) && (a.cells[0].status === "MISSING" || a.cells[0].status === "PARTIAL"));
   const catIds = await prisma.category.findMany({ where: { userId: user.id, parentId: null }, select: { id: true, name: true } });
   const catHref = (name: string) => txnLink({}, { month, kind: "spending", category: catIds.find((x) => x.name === name)?.id });
   const merchantHref = (key: string, label: string) => key.startsWith("name:") ? txnLink({}, { month, q: label }) : `/spending/suppliers/${key}?month=${month}`;
@@ -79,7 +84,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
 
   return (
     <>
-      <PageHeader title="Overview" subtitle={`How your business did in ${monthLabel(month)}`} actions={<MonthPicker month={month} basePath="/" latest={latest} />} />
+      <PageHeader title={scope.multi ? scope.label : "Overview"} subtitle={scope.multi ? `Overview · ${monthLabel(month)}${scope.building ? ` · ${scope.company!.name}` : ""}` : `How your business did in ${monthLabel(month)}`} actions={<MonthPicker month={month} basePath="/" latest={latest} />} />
 
       <div className="mb-6"><AskBar size="lg" suggestions={EXAMPLE_QUESTIONS.slice(0, 4)} /></div>
 
@@ -118,6 +123,13 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <Stat label="Refunds" value={formatMoney(s.refundsCents, c)} href={txnLink({}, { month, kind: "REFUND" })} />
         <Stat label="To review" value={review} tone={review ? "warn" : "good"} href="/review" hint={review ? "Items need a quick look" : "All clear"} />
       </div>
+
+      {split.length > 0 && (
+        <Card className="mb-6" padded={false} title={scope.scope.type === "all" && scope.companies.length > 1 ? `Each company and building in ${mLabel}` : `Each building in ${mLabel}`}
+          subtitle="Kept separate so buildings never get mixed. Click one to see only its numbers; choose “All” at the top to come back.">
+          <ScopeBreakdown rows={split} currency={c} href={`/?month=${month}`} />
+        </Card>
+      )}
 
       <div className="mb-6 grid gap-6 xl:grid-cols-5">
         <Card title="Spending over time" subtitle={`${series.length === 12 ? "Last 12 months" : `Since ${monthLabel(firstDataMonth)}, your first imported statement`}. Click a month to see its transactions.`} className="xl:col-span-3">

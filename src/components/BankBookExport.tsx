@@ -9,7 +9,7 @@ export function BankBookExport({ years, defaultStart, needsSetup }: { years: { s
         <span className="rounded-xl bg-emerald-50 p-2.5 text-emerald-700"><FileSpreadsheet className="h-5 w-5" /></span>
         <div className="flex-1">
           <h2 className="text-base font-semibold">Bank book for your accountant (Excel)</h2>
-          <p className="mt-0.5 text-sm text-slate-500">One sheet per account, one block per month: Date, #, Name, Description, inv. #, Debit (money in), Credit (money out), Balance, with yearly totals and a SUMMARY sheet.</p>
+          <p className="mt-0.5 text-sm text-slate-500">One sheet per account, one block per month: Date, #, Name, Description, inv. #, Debit (money in), Credit (money out), Balance, with yearly totals and a SUMMARY sheet. Every company and building is included in the one file, whatever is selected at the top.</p>
           <form action="/api/export/bankbook" method="get" className="mt-4 flex flex-wrap items-end gap-3">
             <div>
               <label className="label text-xs" htmlFor="bb-start">Fiscal year</label>

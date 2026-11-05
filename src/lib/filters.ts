@@ -18,6 +18,11 @@ export interface Filters {
   review?: string;
   sort?: string;
   page?: string;
+  /**
+   * Company/building scope ("all", "c:<id>", "b:<id>"). Not a URL key: when omitted, the
+   * scope chosen in the header (a cookie) applies. Ignored when `account` is set.
+   */
+  scope?: string;
 }
 
 export const FILTER_KEYS: (keyof Filters)[] = ["from", "to", "month", "account", "accountType", "institution", "merchant", "category", "kind", "ownership", "currency", "q", "review", "sort", "page"];

@@ -1,8 +1,10 @@
 import { prisma } from "../db";
+import { defaultCompany } from "../scope";
 import { DEFAULT_BOOK_CODES, DEFAULT_CATEGORIES, DEFAULT_LEDGER } from "../engine/categories";
 
 /** Create the default category tree and chart of accounts for a new user. */
 export async function setupNewUser(userId: string) {
+  await defaultCompany(userId);
   for (const c of DEFAULT_CATEGORIES) {
     const parent = await prisma.category.create({ data: { userId, name: c.name, kind: c.kind, ledgerCode: c.code, taxTreatment: c.tax, isSystem: true } });
     await prisma.category.createMany({

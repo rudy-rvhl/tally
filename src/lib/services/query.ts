@@ -9,6 +9,7 @@ import { prisma } from "../db";
 import type { Filters } from "../filters";
 import { monthKey, monthRange } from "../engine/dates";
 import type { AnalyticTxn } from "../engine/types";
+import { parseScope, scopeCookie, scopeWhere, type Scope } from "../scope";
 
 export const SPEND_KINDS: TxnKind[] = ["PURCHASE", "FEE", "INTEREST", "REFUND", "REVERSAL"];
 export const MOVE_KINDS: TxnKind[] = ["TRANSFER", "CARD_PAYMENT", "LOAN_PAYMENT"];
@@ -29,8 +30,22 @@ async function categoryIdsIncludingChildren(userId: string, id: string): Promise
   return [id, ...kids.map((k) => k.id)];
 }
 
+/** The scope a query should use: explicit, else the one chosen in the header. A single account ignores it. */
+export async function effectiveScope(userId: string, f: Filters): Promise<Scope> {
+  if (f.account) return { type: "all" };
+  const s = parseScope(f.scope ?? (await scopeCookie()));
+  // A company or building that no longer exists (or isn't this user's) means "everything",
+  // matching what the header shows, rather than silently showing nothing.
+  if (s.type === "company" && !(await prisma.company.count({ where: { id: s.id, userId } }))) return { type: "all" };
+  if (s.type === "building" && !(await prisma.building.count({ where: { id: s.id, userId } }))) return { type: "all" };
+  return s;
+}
+
 export async function buildWhere(userId: string, f: Filters, opts: { includeExcluded?: boolean } = {}): Promise<Prisma.TransactionWhereInput> {
   const where: Prisma.TransactionWhereInput = { userId };
+  const and: Prisma.TransactionWhereInput[] = [];
+  const sw = scopeWhere(await effectiveScope(userId, f));
+  if (sw) and.push(sw);
   if (!opts.includeExcluded) where.excluded = false;
   const d = dateBounds(f);
   if (d.gte || d.lte) where.date = d;
@@ -58,17 +73,19 @@ export async function buildWhere(userId: string, f: Filters, opts: { includeExcl
       { merchant: { name: { contains: q, mode: "insensitive" } } },
       { notes: { contains: q, mode: "insensitive" } },
     ];
-    where.AND = [...((where.AND as Prisma.TransactionWhereInput[]) ?? []), { OR: textMatch }];
+    and.push({ OR: textMatch });
   }
   if (f.review === "open") {
     const items = await prisma.reviewItem.findMany({ where: { userId, status: "OPEN", txnId: { not: null } }, select: { txnId: true } });
     where.id = { in: items.map((i) => i.txnId!) };
   }
+  if (and.length) where.AND = and;
   return where;
 }
 
 export const txnInclude = {
-  account: { select: { id: true, name: true, institution: true, type: true, currency: true, mask: true, ownership: true } },
+  account: { select: { id: true, name: true, institution: true, type: true, currency: true, mask: true, ownership: true, companyId: true, buildingId: true } },
+  building: { select: { id: true, name: true, companyId: true } },
   merchant: { select: { id: true, name: true } },
   category: { select: { id: true, name: true, parent: { select: { id: true, name: true } } } },
   splits: { include: { category: { select: { id: true, name: true, kind: true, parent: { select: { id: true, name: true } } } } } },
@@ -119,6 +136,8 @@ export async function loadAnalytic(user: Pick<User, "id" | "baseCurrency">, f: F
     const base = {
       id: t.id, date: t.date, kind: t.kind, accountId: t.accountId, merchant: t.merchant?.name ?? null,
       merchantId: t.merchantId, pending: t.status === "PENDING",
+      buildingId: t.buildingId ?? t.account.buildingId,
+      companyId: t.building?.companyId ?? t.account.companyId,
     };
     if (t.splits.length) {
       for (const s of t.splits) {

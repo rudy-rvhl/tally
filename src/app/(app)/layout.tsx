@@ -6,10 +6,12 @@ import { SideNav, BottomNav } from "@/components/Nav";
 import { HeaderAsk } from "@/components/HeaderAsk";
 import { Upload } from "lucide-react";
 import { ModeSwitch, SignOut } from "@/components/HeaderActions";
+import { ScopeSwitch } from "@/components/ScopeSwitch";
+import { resolveScope, scopeValue } from "@/lib/scope";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const reviewCount = await prisma.reviewItem.count({ where: { userId: user.id, status: "OPEN" } });
+  const [reviewCount, scope] = await Promise.all([prisma.reviewItem.count({ where: { userId: user.id, status: "OPEN" } }), resolveScope(user.id)]);
   const accountant = user.mode === "ACCOUNTANT";
   return (
     <div className="min-h-screen lg:pl-64">
@@ -21,6 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
           <Link href="/" className="lg:hidden"><Logo compact /></Link>
           <HeaderAsk />
+          {scope.multi && <ScopeSwitch companies={scope.companies} value={scopeValue(scope.scope)} />}
           <ModeSwitch accountant={accountant} />
           <Link href="/import" className="btn-primary px-3 lg:hidden" aria-label="Import a statement"><Upload className="h-4 w-4" /></Link>
           <SignOut />

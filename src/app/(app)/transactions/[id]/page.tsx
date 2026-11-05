@@ -11,7 +11,8 @@ import { Badge, Card, Money, Notice, PageHeader } from "@/components/ui";
 import { BackLink } from "@/components/BackLink";
 import { ActionForm } from "@/components/ActionForm";
 import { CategoryOptions } from "@/components/CategorySelect";
-import { excludeAction, receiptAction, restoreAction, setCategoryAction, setDetailsAction, setKindAction, setMerchantAction, splitAction, unlinkTransferAction } from "@/app/actions";
+import { excludeAction, receiptAction, restoreAction, setCategoryAction, setDetailsAction, setKindAction, setMerchantAction, setTxnBuildingAction, splitAction, unlinkTransferAction } from "@/app/actions";
+import { companyTree } from "@/lib/scope";
 import { ServerActionForm } from "@/components/ServerActionForm";
 
 const SOURCE_LABEL: Record<string, string> = { USER: "You chose this", RULE: "From one of your rules", HISTORY: "Based on how you categorised this supplier before", MERCHANT: "Suggested for this supplier", PATTERN: "Suggested from the description", AI: "Suggested by AI", NONE: "Not categorised yet" };
@@ -25,13 +26,17 @@ export default async function TxnDetail({ params }: { params: Promise<{ id: stri
   });
   if (!t) notFound();
   const accountant = user.mode === "ACCOUNTANT";
-  const [categories, history, reviews, linked, ledger] = await Promise.all([
+  const [categories, history, reviews, linked, ledger, companies] = await Promise.all([
     prisma.category.findMany({ where: { userId: user.id }, select: { id: true, name: true, parentId: true, kind: true } }),
     prisma.auditLog.findMany({ where: { userId: user.id, entityType: "Transaction", entityId: t.id }, orderBy: { createdAt: "desc" }, take: 30 }),
     prisma.reviewItem.findMany({ where: { userId: user.id, status: "OPEN", OR: [{ txnId: t.id }, { relatedTxnId: t.id }] } }),
     t.transferGroupId ? prisma.transaction.findMany({ where: { userId: user.id, transferGroupId: t.transferGroupId, id: { not: t.id } }, include: { account: true } }) : Promise.resolve([]),
     accountant ? prisma.ledgerAccount.findMany({ where: { userId: user.id } }) : Promise.resolve([]),
+    companyTree(user.id),
   ]);
+  const allBuildings = companies.flatMap((c) => c.buildings.map((b) => ({ ...b, company: c.name })));
+  const accountBuilding = allBuildings.find((b) => b.id === t.account.buildingId);
+  const accountCompany = companies.find((c) => c.id === t.account.companyId);
   const catLabel = t.category ? (t.category.parent ? `${t.category.parent.name} › ${t.category.name}` : t.category.name) : "Uncategorized";
   const spendish = ["PURCHASE", "FEE", "INTEREST", "REFUND", "REVERSAL"].includes(t.kind);
   const kinds = Object.entries(KIND_LABELS) as [keyof typeof KIND_LABELS, { simple: string; accountant: string }][];
@@ -106,6 +111,27 @@ export default async function TxnDetail({ params }: { params: Promise<{ id: stri
                 <button className="btn-secondary btn-sm mt-2">Save details</button>
               </ActionForm>
             </div>
+            {allBuildings.length > 0 && (
+              <ActionForm action={setTxnBuildingAction} className="mt-6 border-t border-slate-100 pt-5">
+                <input type="hidden" name="txnId" value={t.id} />
+                <label className="label" htmlFor="buildingId">Building</label>
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+                  <select id="buildingId" name="buildingId" className="input" defaultValue={t.buildingId ?? ""}>
+                    <option value="">{accountBuilding ? `Same as the account: ${accountBuilding.name}` : `Not a specific building (${accountCompany?.name ?? "company"})`}</option>
+                    {companies.filter((c) => c.buildings.length).map((c) => (
+                      <optgroup key={c.id} label={c.name}>{c.buildings.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
+                    ))}
+                  </select>
+                  <button className="btn-secondary btn-sm">Save building</button>
+                </div>
+                {t.merchantId && (
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+                    <label className="flex items-center gap-1.5"><input type="radio" name="scope" value="this" defaultChecked /> Just this one</label>
+                    <label className="flex items-center gap-1.5"><input type="radio" name="scope" value="supplier" /> All {t.merchant?.name} transactions on this account</label>
+                  </div>
+                )}
+              </ActionForm>
+            )}
             <dl className="mt-6 grid gap-x-6 gap-y-3 border-t border-slate-100 pt-5 text-sm sm:grid-cols-2">
               <div><dt className="text-slate-500">Wording on the statement</dt><dd className="font-mono text-xs text-slate-800">{t.originalDescription}</dd></div>
               <div><dt className="text-slate-500">Account</dt><dd><Link className="link" href={`/accounts/${t.accountId}`}>{t.account.institution} · {t.account.name}</Link> <span className="text-slate-500">({ACCOUNT_TYPE_LABELS[t.account.type]}, {t.account.ownership === "BUSINESS" ? "business" : "personal"})</span></dd></div>
