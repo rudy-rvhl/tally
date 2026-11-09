@@ -23,6 +23,9 @@ export function parseOfx(text: string, accountType: AccountTypeName): ParseResul
     periodEnd: tag(text, "DTEND") ? parseDate(tag(text, "DTEND")!) : null,
     openingBalanceCents: null, closingBalanceCents: null, transactions: [], notes,
   };
+  // <CCACCTFROM> is a credit card; <ACCTTYPE> says CHECKING / SAVINGS / CREDITLINE.
+  const acctType = tag(text, "ACCTTYPE")?.toUpperCase();
+  res.accountTypeHint = /<CCACCTFROM>/i.test(text) ? "CREDIT_CARD" : acctType === "SAVINGS" ? "PERSONAL_SAVINGS" : acctType === "CREDITLINE" ? "LINE_OF_CREDIT" : acctType === "CHECKING" ? "BUSINESS_CHEQUING" : null;
   const ledger = text.match(/<LEDGERBAL>([\s\S]*?)(<\/LEDGERBAL>|<AVAILBAL>|<\/STMTRS>|<\/CCSTMTRS>)/i);
   if (ledger) {
     const bal = parseAmountToCents(tag(ledger[1], "BALAMT"));

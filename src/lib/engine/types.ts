@@ -1,7 +1,7 @@
 /** Engine-level types, kept independent from Prisma so engines are pure and testable. */
 
 export type AccountTypeName =
-  | "PERSONAL_CHEQUING" | "PERSONAL_SAVINGS" | "CREDIT_CARD" | "BUSINESS_CHEQUING"
+  | "PERSONAL_CHEQUING" | "PERSONAL_SAVINGS" | "BUSINESS_SAVINGS" | "CREDIT_CARD" | "BUSINESS_CHEQUING"
   | "BUSINESS_CREDIT_CARD" | "LINE_OF_CREDIT" | "CASH" | "OTHER";
 
 export type TxnKindName =
@@ -26,6 +26,9 @@ export interface ParseResult {
   institution: string | null;
   currency: string | null;
   accountHint: string | null; // masked account number if found
+  /** Account type as printed in the statement's heading (chequing, savings, card…), when it says. */
+  accountTypeHint?: AccountTypeName | null;
+  ownershipHint?: "BUSINESS" | "PERSONAL" | null;
   periodStart: Date | null;
   periodEnd: Date | null;
   openingBalanceCents: number | null;

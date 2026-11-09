@@ -12,6 +12,7 @@
  */
 import { parseAmountToCents } from "../money";
 import { utcDate } from "../dates";
+import { detectAccountType } from "../routing";
 import { isLiability } from "../classify";
 import type { AccountTypeName, ParseResult, ParsedTxn } from "../types";
 
@@ -52,7 +53,8 @@ const fold = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,
 const MON = "(?:jan(?:v|vier|uary)?|f[eé]v(?:r|rier)?|feb(?:ruary)?|mar(?:s|ch)?|apr(?:il)?|avr(?:il)?|ma[iy]|jui?n(?:e)?|juil(?:let)?|jul(?:y)?|ao[uû]t?|aug(?:ust)?|sept?(?:embre|ember)?|oct(?:obre|ober)?|nov(?:embre|ember)?|d[eé]c(?:embre|ember)?)\\.?";
 const DATE_TOKEN = `(?:\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}|\\d{1,2}/\\d{1,2}(?:/\\d{2,4})?|${MON}\\s?\\d{1,2}(?:,?\\s\\d{4})?|\\d{1,2}\\s?${MON}(?:\\s\\d{4})?)`;
 const DATE_AT_START = new RegExp(`^(${DATE_TOKEN})(?:\\s+(${DATE_TOKEN}))?(?:\\s+|$)`, "i");
-const AMOUNT_CELL = /^(?:-\s?)?\(?-?\s?\$?\s?\d{1,3}(?:[ ,  ]\d{3})*(?:[.,]\d{2})\)?(?:\s?(?:CR|DR|-))?\s?\$?$/i;
+// Thousands may be grouped ("1,659.09", "1 659,09") or not ("1659.09", as on Scotiabank statements).
+const AMOUNT_CELL = /^(?:-\s?)?\(?-?\s?\$?\s?(?:\d{1,3}(?:[ ,  ]\d{3})+|\d+)(?:[.,]\d{2})\)?(?:\s?(?:CR|DR|-))?\s?\$?$/i;
 
 interface LooseDate { y?: number; m: number; d: number }
 
@@ -71,6 +73,13 @@ export function parseLooseDate(token: string): LooseDate | null {
     const mo = MONTHS[fold(m[2])]; if (mo) return { y: m[3] ? +m[3] : undefined, m: mo, d: +m[1] };
   }
   return null;
+}
+
+/** A date read from a DATE column, which may also be printed as MMDD ("0831") or "08 31". */
+function columnDate(token: string): LooseDate | null {
+  const m = token.trim().match(/^(\d{2})\s?(\d{2})$/);
+  if (m) { const mo = +m[1], d = +m[2]; return mo >= 1 && mo <= 12 && d >= 1 && d <= 31 ? { m: mo, d } : null; }
+  return parseLooseDate(token);
 }
 
 /** Pick the year for a date printed without one, using the statement period (handles Dec→Jan). */
@@ -180,6 +189,15 @@ export function findPeriod(text: string): { start: Date | null; end: Date | null
       return { start: utcDate(y, a.m, a.d), end: utcDate(b.y, b.m, b.d) };
     }
   }
+  // Dates printed under "FROM" / "TO" labels on the line above (Scotiabank business): "AUG 31 2026  SEP 29 2026".
+  const pair = text.match(new RegExp(`(${LONG_DATE})\\s+(${LONG_DATE})`, "i"));
+  if (pair) {
+    const a = parseLooseDate(pair[1]), b = parseLooseDate(pair[2]);
+    if (a?.y && b?.y) {
+      const s0 = utcDate(a.y, a.m, a.d), e0 = utcDate(b.y, b.m, b.d);
+      if (s0 && e0 && e0 >= s0 && e0.getTime() - s0.getTime() <= 100 * 86400000) return { start: s0, end: e0 };
+    }
+  }
   const open = text.match(new RegExp(`(?:opening date|date d'ouverture)\\s*:?\\s*(${LONG_DATE})`, "i"));
   const close = text.match(new RegExp(`(?:closing date|statement date|date du relev[eé])\\s*:?\\s*(${LONG_DATE})`, "i"));
   if (open && close) {
@@ -203,7 +221,7 @@ function accountFromLayout(lines: Line[]): string | null {
   return null;
 }
 
-const AMT_IN_TEXT = "-?\\(?\\$?\\s?\\d{1,3}(?:[ ,\\u00a0]\\d{3})*[.,]\\d{2}\\)?(?:\\s?(?:CR|DR))?";
+const AMT_IN_TEXT = "-?\\(?\\$?\\s?(?:\\d{1,3}(?:[ ,\\u00a0]\\d{3})+|\\d+)[.,]\\d{2}\\)?(?:\\s?(?:CR|DR))?";
 function amountAfter(text: string, label: RegExp): number | null {
   const m = text.match(new RegExp(`${label.source}[^\\d\\n-]{0,40}(${AMT_IN_TEXT})`, "i"));
   if (!m) return null;
@@ -235,12 +253,21 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
       ?? text.match(/(?:account|compte|folio)\s*(?:number|no\.?|num[eé]ro|#)?\s*:?\s*([\d][\d -]{3,}\d)\b/i)?.[1].replace(/\D/g, "").slice(-4) ?? null,
     periodStart: period.start, periodEnd: period.end, openingBalanceCents: null, closingBalanceCents: null, transactions: [], notes,
   };
+  // The statement's heading (everything above the first table) says what kind of account it is.
+  const firstTable = lines.findIndex((l) => detectHeader(l));
+  const kind = detectAccountType(lines.slice(0, firstTable > 0 ? firstTable : 30).map((l) => l.text).join("\n"));
+  res.accountTypeHint = kind.type; res.ownershipHint = kind.ownership;
   const textOpening = amountAfter(text, /(opening balance|previous (statement )?balance|balance forward|solde (pr[eé]c[eé]dent|d'ouverture|report[eé])|ancien solde)/);
   const textClosing = amountAfter(text, /(closing balance|new balance|ending balance|nouveau solde|solde (de fermeture|final))/);
 
   const liability = isLiability(accountType);
   const fallbackYear = yearMatch ? +yearMatch[1] : undefined;
-  const sections: { name: string; key: string; opening: number | null; closing: number | null; rows: ParsedTxn[] }[] = [];
+  const sections: { name: string; key: string; opening: number | null; closing: number | null; rows: ParsedTxn[]; lastDate: Date | null }[] = [];
+  // Rows printed without a date. In a layout where the date sits to the right of the amounts
+  // (Scotiabank business), the date is printed on the LAST row of each day, so these rows take the
+  // next date; otherwise the date is printed on the first row of the day and they take the previous one.
+  let awaitingDate: ParsedTxn[] = [];
+  let trailingDate = false;
   const loanPayments: LoanPayment[] = [];
   let mode: HeaderMode | null = null;
   let cols: Column[] | null = null;
@@ -257,7 +284,7 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
     const key = sectionKey(name);
     const existing = sections.find((x) => x.key === key && key);
     if (existing) { sec = existing; return; }
-    sec = { name: name.replace(/\((suite|continued)\)/gi, "").trim() || `Account ${sections.length + 1}`, key, opening: null, closing: null, rows: [] };
+    sec = { name: name.replace(/\((suite|continued)\)/gi, "").trim() || `Account ${sections.length + 1}`, key, opening: null, closing: null, rows: [], lastDate: null };
     sections.push(sec);
     prevBalance = null;
   };
@@ -267,7 +294,17 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
     const header = detectHeader(line);
     if (header) {
       mode = header.mode; cols = header.cols; current = null; pending = null;
-      const above = lines[li - 1];
+      // A "DATE" heading printed a few points above or below the other headings (stacked headers).
+      const near = lines.filter((l) => l !== line && l.page === line.page && Math.abs(l.y - line.y) <= 10);
+      if (!cols.some((c) => c.kind === "DATE")) {
+        const d = near.flatMap((l) => l.cells).find((c) => /^date$/i.test(c.str.trim()));
+        if (d) cols = [...cols, { kind: "DATE", x: d.x, x2: d.x2 }];
+      }
+      const dateCol = cols.find((c) => c.kind === "DATE"), descCol = cols.find((c) => c.kind === "DESC");
+      trailingDate = !!dateCol && !!descCol && dateCol.x > descCol.x2 + 60;
+      let ai = li - 1;
+      while (ai >= 0 && near.includes(lines[ai])) ai--;
+      const above = lines[ai];
       const name = above && above.page === line.page && line.y - above.y < 30 ? above.text : "";
       if (mode === "TXN") {
         const last = sections[sections.length - 1];
@@ -284,10 +321,14 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
     }
 
     const first = line.cells[0]?.str ?? "";
-    const dm = first.match(DATE_AT_START);
+    const dm = trailingDate ? null : first.match(DATE_AT_START);
     let cells = line.cells;
     let dateTok: string | null = null;
-    if (dm) {
+    const dateCol = trailingDate ? cols?.find((c) => c.kind === "DATE") : undefined;
+    if (dateCol) {
+      const hit = cells.find((c) => c.x >= dateCol.x - 15 && c.x <= dateCol.x2 + 25 && columnDate(c.str) !== null);
+      if (hit) { dateTok = hit.str.trim(); cells = cells.filter((c) => c !== hit); }
+    } else if (dm) {
       dateTok = dm[1];
       const rest = first.slice(dm[0].length).trim();
       cells = [...(rest ? [{ ...line.cells[0], str: rest }] : []), ...line.cells.slice(1)];
@@ -336,7 +377,7 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
 
     // A dated row with text but no amounts: its amounts are probably on the next line.
     if (dateTok && !amounts.length && desc && !SKIP_ROW.test(desc)) {
-      const ld = parseLooseDate(dateTok);
+      const ld = columnDate(dateTok);
       const date = ld ? resolveYear(ld, period, fallbackYear) : null;
       pending = date ? { date, desc, page: line.page, y: line.y, descX: textCells[0]?.x ?? 0 } : null;
       current = null;
@@ -350,9 +391,16 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
     } else if (dateTok && amounts.length) {
       pending = null;
       if (SKIP_ROW.test(desc)) { current = null; continue; }
-      const ld = parseLooseDate(dateTok);
+      const ld = columnDate(dateTok);
       rowDate = ld ? resolveYear(ld, period, fallbackYear) : null;
       if (!rowDate) { current = null; continue; }
+    }
+    // A row with money in or out but no date of its own (several transactions on the same day).
+    let undated = false;
+    if (!rowDate && !dateTok && cols && mode === "TXN" && /[a-zà-ÿ]{2}/i.test(desc) && !SKIP_ROW.test(desc) &&
+        amounts.some((a) => a.col && ["OUT", "IN", "AMOUNT"].includes(a.col.kind)) && (trailingDate || S.lastDate)) {
+      rowDate = trailingDate ? new Date(0) : S.lastDate;
+      undated = trailingDate;
     }
 
     if (rowDate) {
@@ -392,7 +440,15 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
       const u = warnings.indexOf("__unsigned");
       if (u >= 0) warnings.splice(u, 1, "We couldn't tell from the statement whether this is money in or out. Please check it.");
       if (balance !== null) { prevBalance = balance; S.closing = balance; }
+      // No balance printed on this row: keep a running balance so the next printed one can be checked.
+      else if (prevBalance !== null) prevBalance = liability ? prevBalance - signed : prevBalance + signed;
       current = { date: rowDate, amountCents: signed, description: desc || "(no description)", sourceRow: 0, warnings };
+      if (undated) awaitingDate.push(current);
+      else {
+        for (const t of awaitingDate) t.date = rowDate;
+        awaitingDate = [];
+        S.lastDate = rowDate;
+      }
       pos = { page: line.page, y: line.y, descX: textCells[0]?.x ?? 0 };
       S.rows.push(current);
       continue;
@@ -408,6 +464,13 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
     }
     if (dateTok || amounts.length) { current = null; pending = null; }
   }
+
+  // Rows still waiting for a date at the end: use the statement's last date and say so.
+  for (const t of awaitingDate) {
+    const fallback = sections.find((x) => x.rows.includes(t))?.lastDate ?? period.end;
+    if (fallback) { t.date = fallback; t.warnings.push("The statement didn't print a date for this transaction, so we used the last date shown. Please check it."); }
+  }
+  awaitingDate = [];
 
   // Several accounts in one statement: import one section at a time.
   const withRows = sections.map((x, index) => ({ ...x, index })).filter((x) => x.rows.length);

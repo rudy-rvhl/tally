@@ -210,7 +210,7 @@ export async function saveRateAction(_: ActionState, f: FormData): Promise<Actio
 const AccountSchema = z.object({
   institution: z.string().min(1, "Which bank or card company is this?").max(80),
   name: z.string().min(1, "Give the account a name you'll recognise.").max(80),
-  type: z.enum(["PERSONAL_CHEQUING", "PERSONAL_SAVINGS", "CREDIT_CARD", "BUSINESS_CHEQUING", "BUSINESS_CREDIT_CARD", "LINE_OF_CREDIT", "CASH", "OTHER"]),
+  type: z.enum(["PERSONAL_CHEQUING", "PERSONAL_SAVINGS", "BUSINESS_SAVINGS", "CREDIT_CARD", "BUSINESS_CHEQUING", "BUSINESS_CREDIT_CARD", "LINE_OF_CREDIT", "CASH", "OTHER"]),
   currency: z.enum(["CAD", "USD"]),
   mask: z.string().regex(/^\d{0,4}$/, "Enter only the last 4 digits.").optional(),
   ownership: z.enum(["PERSONAL", "BUSINESS"]),

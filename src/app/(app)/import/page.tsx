@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Files } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ACCOUNT_TYPE_LABELS } from "@/lib/services/options";
@@ -19,9 +19,12 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
   ]);
   return (
     <>
-      <PageHeader title="Import a statement" subtitle="Drop in a statement from your bank. You'll see everything before it's saved." />
+      <PageHeader title="Import a statement" subtitle="Drop in a statement from your bank. You'll see everything before it's saved."
+        actions={<Link className="btn-secondary" href="/import/bulk"><Files className="h-4 w-4" /> Import several at once</Link>} />
       {!accounts.length ? (
-        <Card><EmptyState title="First, add the account this statement is for" action={<Link className="btn-primary" href="/accounts/new?next=import"><Plus className="h-4 w-4" /> Add an account</Link>} /></Card>
+        <Card><EmptyState title="First, add the account this statement is for"
+          body="Or drop all your statements at once: we'll recognise each bank account and card and create them for you."
+          action={<div className="flex flex-wrap justify-center gap-2"><Link className="btn-primary" href="/import/bulk"><Files className="h-4 w-4" /> Import several statements</Link><Link className="btn-secondary" href="/accounts/new?next=import"><Plus className="h-4 w-4" /> Add an account</Link></div>} /></Card>
       ) : (
         <ImportWizard
           accounts={accounts.map((a) => ({ id: a.id, label: `${a.institution} · ${a.name}${a.mask ? ` ··${a.mask}` : ""}`, type: ACCOUNT_TYPE_LABELS[a.type], currency: a.currency, liability: ["CREDIT_CARD", "BUSINESS_CREDIT_CARD", "LINE_OF_CREDIT"].includes(a.type) }))}

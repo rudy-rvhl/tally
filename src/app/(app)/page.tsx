@@ -37,9 +37,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             title={accountCount ? "Import your first statement" : "Start by adding a bank account or card"}
             body={accountCount
               ? "Download a statement from your bank's website (CSV, Excel, OFX/QFX or PDF), then drag it in. You'll see a preview before anything is saved."
-              : "Tell us which account the statement is for. Then import a statement file from your bank, and LedgerIQ sorts everything out."}
+              : "Drop in your statements from every bank (PDF, CSV, Excel or OFX). LedgerIQ recognises each account by its number and type and sets them up for you. Or add an account by hand first."}
             action={accountCount ? <Link href="/import" className="btn-primary"><Upload className="h-4 w-4" /> Import a statement</Link>
-              : <Link href="/accounts/new?next=import" className="btn-primary"><Landmark className="h-4 w-4" /> Add an account</Link>}
+              : <div className="flex flex-wrap justify-center gap-2"><Link href="/import/bulk" className="btn-primary"><Upload className="h-4 w-4" /> Drop all my statements</Link><Link href="/accounts/new?next=import" className="btn-secondary"><Landmark className="h-4 w-4" /> Add an account</Link></div>}
           />
         </Card>
       </>

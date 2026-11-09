@@ -146,7 +146,7 @@ export function ImportWizard({ accounts, categories, initialAccount, accountant 
               role="button" tabIndex={0} aria-label="Upload a statement file"
               onClick={() => input.current?.click()} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && input.current?.click()}
               onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
-              onDrop={(e) => { e.preventDefault(); setDrag(false); pick(e.dataTransfer.files?.[0]); }}
+              onDrop={(e) => { e.preventDefault(); setDrag(false); if ((e.dataTransfer.files?.length ?? 0) > 1) { setError("You dropped several files. Use “Import several at once” at the top of this page to import them together."); return; } pick(e.dataTransfer.files?.[0]); }}
               className={clsx("flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-8 text-center transition", drag ? "border-brand-500 bg-brand-50" : "border-slate-300 bg-slate-50/50 hover:border-brand-400 hover:bg-brand-50/40", !accountId && "opacity-60")}>
               {busy === "preview" ? <Loader2 className="h-8 w-8 animate-spin text-brand-600" /> : file ? <FileText className="h-8 w-8 text-brand-600" /> : <UploadCloud className="h-8 w-8 text-brand-600" />}
               <p className="mt-2 font-semibold text-slate-800">{busy === "preview" ? "Reading your statement…" : file ? file.name : "Drag your statement here, or click to choose"}</p>

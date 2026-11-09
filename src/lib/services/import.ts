@@ -151,6 +151,8 @@ export interface CommitInput {
   includeAlreadyImported?: number[];
   /** For statements covering several accounts: which section to import. */
   section?: number;
+  /** Bulk import (no preview): send rows the reader wasn't sure about to Review. */
+  flagWarnings?: boolean;
 }
 
 export interface CommitResult { batchId: string; imported: number; skippedDuplicates: number; skippedByUser: number; flagged: number; transfersLinked: number; statementId: string | null; months: string[] }
@@ -222,6 +224,9 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
       if (v.status === "POSSIBLE_DUPLICATE" && v.matchId) {
         flagged++;
         await db.reviewItem.create({ data: { userId, type: "DUPLICATE", txnId: created.id, relatedTxnId: v.matchId, message: "We found two transactions that might be the same purchase. Would you like to review them?" } });
+      } else if (input.flagWarnings && parsed.transactions[r.i].warnings.length) {
+        flagged++;
+        await db.reviewItem.create({ data: { userId, type: "CATEGORY", txnId: created.id, message: `Please check "${r.description}" (${isoDate(r.date)}): ${parsed.transactions[r.i].warnings.join(" ")}` } });
       } else if (!userCat && !NO_MERCHANT.includes(kind) && kind !== "INCOME" && kind !== "REVERSAL" && c.category.confidence < REVIEW_CONFIDENCE_THRESHOLD) {
         flagged++;
         await db.reviewItem.create({ data: { userId, type: "CATEGORY", txnId: created.id, message: `What was "${r.description}" for? Choose an expense category so it's counted correctly.` } });

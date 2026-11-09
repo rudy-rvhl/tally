@@ -136,4 +136,30 @@ describe("Desjardins business statement with several accounts", () => {
     expect(r.loanPayments).toEqual([{ date: new Date("2026-10-16T00:00:00Z"), interestCents: 346000, principalCents: 74000, loan: "PR 1 PRET HYPOTHECAIRE (MULTILOGEMENTS)" }]);
     expect(r.transactions.some((t) => /Remboursement automatique/.test(t.description))).toBe(false);
   });
+
+  it("Scotiabank business: date column on the right (MMDD), printed only on the last row of each day", async () => {
+    const r = await parsePdf(pdf("scotia-business-2026-09.pdf"), "BUSINESS_CHEQUING");
+    expect(r.institution).toBe("Scotiabank");
+    expect(r.accountHint).toBe("9876");
+    expect(r.accountTypeHint).toBe("BUSINESS_CHEQUING");
+    expect([isoDate(r.periodStart!), isoDate(r.periodEnd!)]).toEqual(["2026-08-31", "2026-09-29"]);
+    expect(rows(r)).toEqual([
+      ["2026-09-05", 125000, "CREDIT MEMO 70000001 FREE INTERAC E-TRANSFER"], // undated row: takes the next printed date
+      ["2026-09-05", 98000, "CREDIT MEMO 70000002 FREE INTERAC E-TRANSFER"],
+      ["2026-09-15", -36540, "INSURANCE ARCHIVE+8 EXEMPLE ASSURANCES MUTUELLE"],
+      ["2026-09-18", -14218, "BILL PAYMENT HYDRO-QUEBEC"],
+      ["2026-09-29", 110000, "CREDIT MEMO 70000003 FREE INTERAC E-TRANSFER"],
+      ["2026-09-29", -2000, "SERVICE CHARGE"],
+    ]);
+    expect(r.transactions.every((t) => !t.warnings.length)).toBe(true); // every amount checked against the running balance
+    expect([r.openingBalanceCents, r.closingBalanceCents]).toEqual([320000, 600242]);
+    expect(balances("BUSINESS_CHEQUING", r).balanced).toBe(true);
+  });
+
+  it("Scotiabank savings statement is recognised as savings, and the fee table on page 2 is ignored", async () => {
+    const r = await parsePdf(pdf("scotia-savings-2026-10.pdf"), "BUSINESS_CHEQUING");
+    expect([r.accountHint, r.accountTypeHint, r.ownershipHint]).toEqual(["5432", "BUSINESS_SAVINGS", "BUSINESS"]);
+    expect(rows(r)).toEqual([["2026-10-15", 100000, "TRANSFER FROM 00098 76"], ["2026-10-30", 412, "INTEREST"]]);
+    expect(balances("BUSINESS_SAVINGS", r).balanced).toBe(true);
+  });
 });

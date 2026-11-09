@@ -19,6 +19,7 @@ const Body = z.object({
   closingBalanceCents: z.number().int().nullable().optional(),
   mapping: z.any().optional(),
   section: z.number().int().min(0).nullable().optional(),
+  flagWarnings: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -39,6 +40,7 @@ export async function POST(req: Request) {
       decisions: Object.fromEntries(Object.entries(p.decisions).map(([k, v]) => [Number(k), v])),
       includeAlreadyImported: p.includeAlreadyImported, periodStart: p.periodStart, periodEnd: p.periodEnd,
       openingBalanceCents: p.openingBalanceCents, closingBalanceCents: p.closingBalanceCents, section: p.section ?? undefined,
+      flagWarnings: p.flagWarnings,
     });
     revalidatePath("/", "layout");
     return NextResponse.json(result);

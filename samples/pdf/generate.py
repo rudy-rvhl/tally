@@ -205,6 +205,79 @@ def scanned():
         pages = [Image.open(p).convert("L").rotate(0.4, fillcolor=255, expand=False) for p in sorted(Path(tmp).glob("p-*.png"))]
         pages[0].save(OUT / "scanned-chequing.pdf", save_all=True, append_images=pages[1:], resolution=150)
 
+def scotia(file, kind, acct, start, end, opening, rows, totals):
+    """Scotiabank business layout: date column (MMDD) to the RIGHT of the amounts, printed only on the
+    last transaction of each day together with the balance; 3-line descriptions; page 2 is a fee table."""
+    c = canvas.Canvas(str(OUT / file), pagesize=letter)
+    T = lambda y: H - y  # positions measured from the top, like the real statement
+    def page_top(page, label):
+        c.setFont("Courier", 8)
+        c.drawString(67, T(56), "100 RUE EXEMPLE"); c.drawString(271, T(56), "10001 31")
+        c.drawString(67, T(65), "MONTREAL QC H2X 1A1")
+        c.drawString(67, T(130), "SBDDA40000_0000001_002 E D 10001"); c.drawString(193, T(130), "00001")
+        c.drawString(67, T(139), "EXEMPLE IMMOBILIER INC"); c.drawString(67, T(148), "200 AV DES EXEMPLES")
+        c.drawString(67, T(166), "MONTREAL QC"); c.drawString(67, T(175), "H2X 1A1")
+        c.drawString(532, T(155), "ACCOUNT NUMBER"); c.drawString(525, T(166), acct)
+        c.drawString(84, T(214), "STATEMENT OF"); c.drawString(372, T(214), "FROM"); c.drawString(480, T(214), "TO"); c.drawString(578, T(214), "PAGE")
+        c.drawString(84, T(228), label); c.drawString(372, T(228), start); c.drawString(480, T(228), end); c.drawString(590, T(228), str(page))
+        c.drawString(461, T(237), "DATE")
+        c.drawString(136, T(240), "DESCRIPTION"); c.drawString(261, T(240), "WITHDRAWALS/DEBITS"); c.drawString(371, T(240), "DEPOSITS/CREDITS"); c.drawString(526, T(240), "BALANCE")
+        c.drawString(459, T(246), "M"); c.drawString(475, T(246), "D")
+        c.drawString(67, T(779), "GST REGISTRATION NO. R000000000"); c.drawString(300, T(779), "Registered trademark of The Bank of Nova Scotia")
+    page_top(1, kind)
+    y = 258
+    c.drawString(72, T(y), "BALANCE FORWARD"); c.drawString(459, T(y), start_md(start)); c.drawRightString(595, T(y), f"{opening:.2f}")
+    bal = opening
+    for desc, amt, md in rows:
+        y += 11
+        bal = round(bal + amt, 2)
+        c.drawString(72, T(y), desc[0])
+        if amt < 0: c.drawRightString(353, T(y), f"{-amt:.2f}")
+        else: c.drawRightString(448, T(y), f"{amt:.2f}")
+        if md: c.drawString(459, T(y), md); c.drawRightString(595, T(y), f"{bal:.2f}")
+        for extra in desc[1:]:
+            y += 11; c.drawString(78, T(y), extra)
+    c.drawString(41, T(y + 11), "*119000000*")
+    c.drawString(72, T(y + 33), '"UNCOLLECTED FEES AND/OR ODI OWING: $0.00"')
+    c.drawString(88, T(714), "NO. OF"); c.drawString(291, T(714), "NO. OF"); c.drawString(494, T(714), "NO. OF"); c.drawString(545, T(714), "MORE ITEMS")
+    c.drawString(163, T(718), "TOTAL AMOUNT - DEBITS"); c.drawString(357, T(718), "TOTAL AMOUNT - CREDITS")
+    c.drawString(89, T(723), "DEBITS"); c.drawString(290, T(723), "CREDITS"); c.drawString(485, T(723), "ENCLOSURES"); c.drawString(551, T(723), "ON PAGE")
+    nd, td, nc, tc = totals
+    c.drawString(125, T(742), str(nd)); c.drawRightString(278, T(742), f"{td:,.2f}"); c.drawString(321, T(742), str(nc)); c.drawRightString(466, T(742), f"{tc:,.2f}"); c.drawString(588, T(742), "2")
+    c.showPage()
+    page_top(2, "SERVICE CHARGE")
+    c.drawString(115, T(263), "ITEM"); c.drawString(286, T(263), "VOLUME"); c.drawString(382, T(263), "RATE"); c.drawString(532, T(263), "CHARGE")
+    c.drawString(61, T(279), "SBAP MONTHLY FEE - FULL"); c.drawString(313, T(279), "25"); c.drawRightString(595, T(279), "20.00")
+    c.drawString(61, T(301), "TOTAL SERVICE CHARGES"); c.drawRightString(595, T(301), "20.00")
+    c.save()
+
+def start_md(label):
+    months = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"]
+    m, d, _ = label.split()
+    return f"{months.index(m) + 1:02d}{int(d):02d}"
+
+def scotia_all():
+    etr = lambda ref: ["CREDIT MEMO", ref, "FREE INTERAC E-TRANSFER"]
+    scotia("scotia-business-2026-09.pdf", "BUSINESS ACCOUNT", "10001 00098 76", "AUG 31 2026", "SEP 29 2026", 3200.00, [
+        (etr("70000001"), 1250.00, None),
+        (etr("70000002"), 980.00, "0905"),
+        (["INSURANCE", "ARCHIVE+8", "EXEMPLE ASSURANCES", "MUTUELLE"], -365.40, "0915"),
+        (["BILL PAYMENT", "HYDRO-QUEBEC"], -142.18, "0918"),
+        (etr("70000003"), 1100.00, None),
+        (["SERVICE CHARGE"], -20.00, "0929"),
+    ], (3, 527.58, 3, 3330.00))
+    scotia("scotia-business-2026-10.pdf", "BUSINESS ACCOUNT", "10001 00098 76", "SEP 30 2026", "OCT 30 2026", 6002.42, [
+        (["DEPOSIT", "MOBILE CHEQUE"], 2400.00, "1001"),
+        (["PC BILL PAYMENT", "SCOTIA VISA"], -800.00, None),
+        (["TRANSFER TO", "00054 32"], -1000.00, "1015"),
+        (["POS PURCHASE", "RONA #12345"], -215.37, "1020"),
+        (["SERVICE CHARGE"], -20.00, "1030"),
+    ], (4, 2035.37, 1, 2400.00))
+    scotia("scotia-savings-2026-10.pdf", "BUSINESS SAVINGS ACCOUNT", "10001 00054 32", "SEP 30 2026", "OCT 30 2026", 10000.00, [
+        (["TRANSFER FROM", "00098 76"], 1000.00, "1015"),
+        (["INTEREST"], 4.12, "1030"),
+    ], (0, 0.00, 2, 1004.12))
+
 if __name__ == "__main__":
-    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned()
+    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all()
     print("generated", sorted(p.name for p in OUT.glob("*.pdf")))

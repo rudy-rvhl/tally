@@ -7,7 +7,7 @@ import { dataRange } from "./query";
 
 export const ACCOUNT_TYPE_LABELS: Record<string, string> = {
   PERSONAL_CHEQUING: "Personal chequing", PERSONAL_SAVINGS: "Personal savings", CREDIT_CARD: "Credit card",
-  BUSINESS_CHEQUING: "Business chequing", BUSINESS_CREDIT_CARD: "Business credit card", LINE_OF_CREDIT: "Line of credit", CASH: "Cash", OTHER: "Other",
+  BUSINESS_CHEQUING: "Business chequing", BUSINESS_SAVINGS: "Business savings", BUSINESS_CREDIT_CARD: "Business credit card", LINE_OF_CREDIT: "Line of credit", CASH: "Cash", OTHER: "Other",
 };
 
 export async function filterOptions(user: User, extra: Partial<FilterOptions> = {}): Promise<FilterOptions> {

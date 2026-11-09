@@ -288,6 +288,32 @@ check(await page.isVisible("text=/loan payment was \\$3,460.00 of interest and \
 await go(`${BASE}/accounts/${multiId}`);
 check(await page.isVisible("text=Matches your statement"), "Desjardins statement reconciles");
 
+// 11d2. Bulk import: several Scotiabank statements at once, filed by account number and type
+await go(`${BASE}/import/bulk`);
+await page.setInputFiles("[data-testid=bulk-input]", ["scotia-business-2026-10.pdf", "scotia-savings-2026-10.pdf", "scotia-business-2026-09.pdf"].map((f) => path.join(here, "..", "samples", "pdf", f)));
+await page.waitForFunction(() => document.querySelectorAll("[data-testid=bulk-row]").length === 3 && !document.body.innerText.includes("Reading…"), null, { timeout: 60000 });
+const bulkRows = await page.locator("[data-testid=bulk-row]").allTextContents();
+check(bulkRows.every((r) => /Scotiabank/.test(r)) && bulkRows.filter((r) => /··9876/.test(r)).length === 2 && bulkRows.some((r) => /··5432.*business savings/i.test(r)), "bulk: bank, account number and savings vs chequing read from each statement");
+check(bulkRows.every((r) => /balances match/.test(r)), "bulk: every Scotia statement adds up");
+const choices = await page.locator("[data-testid=bulk-row] select").evaluateAll((els) => els.map((e) => e.options[e.selectedIndex].text));
+check(choices.filter((c) => /New account: Business chequing ··9876/.test(c)).length === 2 && choices.some((c) => /New account: Business savings ··5432/.test(c)) && !choices.some((c) => /8812/.test(c)),
+  `bulk: new accounts proposed, existing Scotia Visa not used (${choices.join(" | ")})`);
+const periods = await page.locator("[data-testid=bulk-row] td:nth-child(3)").allTextContents();
+check(periods[0].startsWith("Aug 31") && periods[1].startsWith("Sep 30"), `bulk: statements for the same account are in date order (${periods.join(" | ")})`);
+await shot("20-bulk-import");
+await page.click("[data-testid=bulk-import]");
+await page.waitForSelector("text=/Imported \\d+ transactions? from 3 statements/", { timeout: 120000 });
+check((await page.locator("[data-testid=bulk-done]").count()) === 3, "bulk: all three statements imported");
+await go(`${BASE}/accounts`);
+check(await page.isVisible("text=Business chequing ··9876") && await page.isVisible("text=Business savings ··5432"), "bulk: accounts created with their type and number");
+await go(BASE + (await page.locator("a.card:has-text('Business chequing ··9876')").getAttribute("href")));
+check(await page.isVisible("text=Matches your statement"), "bulk: Scotia statement reconciles to the cent");
+// The same files again: recognised, routed to the accounts that now exist, and not imported twice.
+await go(`${BASE}/import/bulk`);
+await page.setInputFiles("[data-testid=bulk-input]", [path.join(here, "..", "samples", "pdf", "scotia-business-2026-10.pdf")]);
+await page.waitForFunction(() => document.querySelectorAll("[data-testid=bulk-row]").length === 1 && !document.body.innerText.includes("Reading…"), null, { timeout: 60000 });
+check(await page.isVisible("text=You already imported this exact file"), "bulk: a re-uploaded file is recognised and left out");
+
 // 11e. Companies and buildings: kept apart on screen, all together in the bank book
 await go(`${BASE}/settings`);
 check(await page.locator("[data-testid=company]").count() === 1, "a new user starts with one company");
