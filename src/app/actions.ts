@@ -13,7 +13,8 @@ import { unlinkTransfer, linkTransfers } from "@/lib/services/transfers";
 import { addAdjustment, evaluateStatement } from "@/lib/services/reconciliation";
 import { parseAmountToCents } from "@/lib/engine/money";
 import { clearFailures, isLocked, recordFailure } from "@/lib/ratelimit";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { completeReset, createResetToken, printResetLink } from "@/lib/services/passwordReset";
 import { defaultCompany, parseScope, scopeValue, SCOPE_COOKIE } from "@/lib/scope";
 
 export interface ActionState { ok?: boolean; error?: string; message?: string; /** Client navigates here on success. */ redirectTo?: string }
@@ -36,15 +37,42 @@ export async function registerAction(_: ActionState, f: FormData): Promise<Actio
 
 export async function loginAction(_: ActionState, f: FormData): Promise<ActionState> {
   const email = str(f, "email").toLowerCase();
-  if (isLocked(email)) return { error: "Too many sign-in attempts. For your security, please wait 15 minutes and try again." };
+  if (isLocked(email)) return { error: "Too many sign-in attempts. For your security, please wait 15 minutes, or use “Forgot your password?” below." };
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || !(await verifyPassword(String(f.get("password") ?? ""), user.passwordHash))) {
     recordFailure(email);
-    return { error: "That email and password don't match. Please try again." };
+    return { error: "That email and password don't match. Please try again, or use “Forgot your password?” below. Your data is safe either way." };
   }
   clearFailures(email);
   await createSession(user.id);
   return { ok: true, redirectTo: "/" };
+}
+
+// ---------- password recovery (no data is changed, only the password)
+export async function requestResetAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const email = str(f, "email").toLowerCase();
+  if (!email) return { error: "Enter the email you sign in with." };
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (user) {
+    const token = await createResetToken(user.id);
+    const h = await headers();
+    const origin = process.env.APP_URL?.replace(/\/$/, "") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host") ?? "localhost:3000"}`;
+    printResetLink(email, `${origin}/reset-password?token=${token}`);
+  } else console.log(`\n  LedgerIQ password reset: no account uses ${email}. Run "npm run reset-password" to see which emails have accounts.\n`);
+  // Same answer either way, so the page doesn't reveal which emails have accounts.
+  return { ok: true, message: "sent" };
+}
+
+export async function resetPasswordAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const password = String(f.get("password") ?? "");
+  if (password.length < 10) return { error: "Use at least 10 characters for your new password." };
+  if (password !== String(f.get("confirm") ?? "")) return { error: "The two passwords don't match." };
+  const user = await completeReset(str(f, "token"), await hashPassword(password));
+  if (!user) return { error: "This reset link has expired or was already used. Ask for a new one." };
+  clearFailures(user.email);
+  await createSession(user.id);
+  // Redirect on the server: refreshing the reset page would show the link as used.
+  redirect("/");
 }
 
 export async function logoutAction() {

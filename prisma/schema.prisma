@@ -131,6 +131,19 @@ model User {
   journal       JournalEntry[]
   companies     Company[]
   buildings     Building[]
+  passwordResets PasswordReset[]
+}
+
+/// One-time password reset link. Only a hash of the token is stored; it expires and works once.
+model PasswordReset {
+  id        String    @id // sha256 of the token
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 /// A business the user keeps books for. Each bank account belongs to one company.

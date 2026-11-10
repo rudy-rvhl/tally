@@ -16,6 +16,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "postinstall": "prisma generate",
     "doctor": "node scripts/doctor.mjs",
+    "reset-password": "prisma generate > /dev/null && prisma migrate deploy > /dev/null && node scripts/reset-password.mjs",
     "predev": "prisma generate && prisma migrate deploy",
     "prestart": "prisma migrate deploy",
     "prebuild": "prisma generate"

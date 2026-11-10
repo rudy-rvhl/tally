@@ -22,7 +22,10 @@ export function AuthForm({ mode, action }: { mode: "login" | "register"; action:
         <input className="input" id="email" name="email" type="email" autoComplete="email" required />
       </div>
       <div>
-        <label className="label" htmlFor="password">Password</label>
+        <div className="flex items-baseline justify-between">
+          <label className="label" htmlFor="password">Password</label>
+          {mode === "login" && <Link className="link text-sm" href="/forgot-password">Forgot your password?</Link>}
+        </div>
         <input className="input" id="password" name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={mode === "register" ? 10 : undefined} required />
         {mode === "register" && <p className="mt-1 text-xs text-slate-500">At least 10 characters.</p>}
       </div>
