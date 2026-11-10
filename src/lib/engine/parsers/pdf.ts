@@ -118,8 +118,8 @@ const HEADER_WORDS: [RegExp, ColKind][] = [
   [/^(int[eé]r[eê]ts?|interest)( \(\$\))?$/i, "INTEREST"],
   [/^(capital vers[eé]|advances?|d[eé]boursements?)( \(\$\))?$/i, "ADVANCE"],
   [/^(remboursement|principal|capital rembours[eé]|principal paid)( \(\$\))?$/i, "PRINCIPAL"],
-  [/(withdrawals?|debits?|retraits?|cheques? & debits|paid out|charges?|d[eé]bit|frais|fees?)( \(\$\))?( \$)?$/i, "OUT"],
-  [/(deposits?|credits?|d[eé]p[oô]ts?|paid in|payments? (and|&) credits|cr[eé]dit)( \(\$\))?( \$)?$/i, "IN"],
+  [/(withdrawals?|withdrawn|debits?|retraits?|cheques? & debits|paid out|charges?|d[eé]bit|frais|fees?)( \(\$\))?( \$)?$/i, "OUT"],
+  [/(deposits?|deposited|credits?|d[eé]p[oô]ts?|paid in|payments? (and|&) credits|cr[eé]dit)( \(\$\))?( \$)?$/i, "IN"],
   [/^(amount|montant)\s*(\(\s?\$\s?\)|\$)?$/i, "AMOUNT"],
   [/^(balance|solde)( \(\$\))?( \$)?$/i, "BALANCE"],
 ];
@@ -128,14 +128,18 @@ type HeaderMode = "TXN" | "LOAN" | "OTHER";
 function detectHeader(line: Line): { cols: Column[]; mode: HeaderMode } | null {
   const cols: Column[] = [];
   for (const c of line.cells) {
-    const hit = HEADER_WORDS.find(([re]) => re.test(c.str.trim()));
+    const raw = c.str.trim(), plain = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const hit = HEADER_WORDS.find(([re]) => re.test(raw) || re.test(plain));
     if (hit) cols.push({ kind: hit[1], x: c.x, x2: c.x2 });
   }
   if (cols.length < 3 || !cols.some((c) => c.kind === "DATE" || c.kind === "DESC")) {
     // Short two-column headers ("Date  Amount") still count.
     if (!(cols.length >= 2 && cols.some((c) => c.kind === "DATE" || c.kind === "DESC") && cols.some((c) => ["OUT", "IN", "AMOUNT"].includes(c.kind)))) return null;
   }
-  if (cols.some((c) => c.kind === "INTEREST" || c.kind === "PRINCIPAL")) return { cols, mode: "LOAN" };
+  // A loan section has principal / advances. Interest alone (daily closing balance, rate, interest)
+  // is an interest calculation table: information only.
+  if (cols.some((c) => c.kind === "PRINCIPAL" || c.kind === "ADVANCE")) return { cols, mode: "LOAN" };
+  if (cols.some((c) => c.kind === "INTEREST") || line.cells.some((c) => /^(rndmt|taux|rate|yield|rendement)\b/i.test(c.str.trim()))) return { cols, mode: "OTHER" };
   if (cols.some((c) => c.kind === "OUT" || c.kind === "IN" || c.kind === "AMOUNT")) return { cols, mode: "TXN" };
   return { cols, mode: "OTHER" };
 }
@@ -153,7 +157,7 @@ function columnFor(cell: Cell, cols: Column[]): Column | null {
 
 // ---------- statement-level facts
 export const INSTITUTION_KEYWORDS: Array<[RegExp, string]> = [
-  [/scotiabank|bank of nova scotia/i, "Scotiabank"],
+  [/scotiabank|bank of nova scotia|banque scotia|banque de nouvelle-[eé]cosse/i, "Scotiabank"],
   [/royal bank|\brbc\b/i, "RBC Royal Bank"],
   [/td canada trust|toronto-dominion|\btd bank\b/i, "TD Canada Trust"],
   [/\bbmo\b|bank of montreal|banque de montr[eé]al/i, "BMO"],
@@ -198,8 +202,8 @@ export function findPeriod(text: string): { start: Date | null; end: Date | null
       if (s0 && e0 && e0 >= s0 && e0.getTime() - s0.getTime() <= 100 * 86400000) return { start: s0, end: e0 };
     }
   }
-  const open = text.match(new RegExp(`(?:opening date|date d'ouverture)\\s*:?\\s*(${LONG_DATE})`, "i"));
-  const close = text.match(new RegExp(`(?:closing date|statement date|date du relev[eé])\\s*:?\\s*(${LONG_DATE})`, "i"));
+  const open = text.match(new RegExp(`(?:opening date|date d'ouverture|opening balance on|solde d'ouverture au)\\s*:?\\s*(${LONG_DATE})`, "i"));
+  const close = text.match(new RegExp(`(?:closing date|statement date|date du relev[eé]|closing balance on|solde de fermeture au)\\s*:?\\s*(${LONG_DATE})`, "i"));
   if (open && close) {
     const a = parseLooseDate(open[1]), b = parseLooseDate(close[1]);
     if (a?.y && b?.y) return { start: utcDate(a.y, a.m, a.d), end: utcDate(b.y, b.m, b.d) };
@@ -229,10 +233,20 @@ function amountAfter(text: string, label: RegExp): number | null {
   return a ? (a.explicitMinus && !a.credit ? -a.cents : a.cents) : null;
 }
 
-const OPENING_ROW = /^(opening balance|balance forward|previous (statement )?balance|solde (report[eé]|d'ouverture|pr[eé]c[eé]dent|ant[eé]rieur)|ancien solde)/i;
-const CLOSING_ROW = /^(closing balance|new balance|ending balance|solde (de fermeture|final|actuel)|nouveau solde)/i;
+const OPENING_ROW = /^(opening balance|balance forward|balance brought forward|brought forward|previous (statement )?balance|beginning balance|starting balance|report\b|solde (report[eé]|d'ouverture|pr[eé]c[eé]dent|ant[eé]rieur|au d[eé]but)|ancien solde)/i;
+const CLOSING_ROW = /^(closing balance|new balance|ending balance|balance carried forward|carried forward|solde (de fermeture|final|actuel|[àa] reporter)|nouveau solde)/i;
+/**
+ * A line that only states a balance ("REPORT", "Balance brought forward", "Your balance on Sep 30, 2026",
+ * "Solde au 31 juillet") and is never money in or out, whatever column its number is in.
+ */
+const BALANCE_WORDS = new Set(["opening", "closing", "new", "previous", "ending", "beginning", "starting", "current", "final", "account", "your", "statement", "daily", "balance", "balances", "forward", "brought", "carried", "from", "last", "this", "period", "report", "reporte", "reporter", "solde", "ouverture", "fermeture", "nouveau", "ancien", "precedent", "anterieur", "actuel", "debut", "fin", "au", "du", "de", "d", "a", "on", "as", "of", "at", "the", "le", "la", "en", "date", "le"]);
+export function isBalanceLine(desc: string): boolean {
+  const words = desc.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[$=:,.()'’*-]/g, " ").split(/\s+/).filter(Boolean)
+    .filter((w) => !/^\d+$/.test(w) && !MONTHS[w] && !/^\d+(er)?$/.test(w));
+  return words.length > 0 && words.some((w) => w === "balance" || w === "solde" || w === "report") && words.every((w) => BALANCE_WORDS.has(w));
+}
 const SKIP_ROW = /^(total|sub-?total|sous-total|totaux|interest charged on|minimum payment|paiement minimum|payment due|page \d)/i;
-const NOT_CONTINUATION = /^(reference|r[eé]f[eé]rence|page \d|continued|suite|please|veuillez|account|compte|total|date d'[eé]ch[eé]ance|taux)/i;
+const NOT_CONTINUATION = /^(reference|r[eé]f[eé]rence|page \d|continued|suite|please|veuillez|account|compte|total|date d'[eé]ch[eé]ance|taux|nombre de|number of|no\. of|sommaire|summary)/i;
 const sectionKey = (s: string) => s.replace(/\((suite|continued|cont'd)\)/gi, "").replace(/\s+/g, " ").trim().toUpperCase();
 
 export interface StatementSection { index: number; name: string; transactions: number }
@@ -257,6 +271,16 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
   const firstTable = lines.findIndex((l) => detectHeader(l));
   const kind = detectAccountType(lines.slice(0, firstTable > 0 ? firstTable : 30).map((l) => l.text).join("\n"));
   res.accountTypeHint = kind.type; res.ownershipHint = kind.ownership;
+  if (!kind.type) {
+    // The product name can be printed further down ("Compte d'épargne sur mesure", "Compte de placements
+    // d'entreprise", "Momentum PLUS Savings Account"): a line naming an account, with no amount and no transfer.
+    const product = lines.find((l) => /^(compte\b|.*\baccount$)/i.test(l.text.trim()) && !l.cells.some((c) => AMOUNT_CELL.test(c.str.trim())) &&
+      !/transfer|virement|\bvir\b|\bto\b|\bfrom\b|payment|paiement/i.test(l.text) && detectAccountType(l.text).type);
+    if (product) {
+      const k = detectAccountType(product.text);
+      res.accountTypeHint = k.type === "PERSONAL_SAVINGS" && kind.ownership === "BUSINESS" ? "BUSINESS_SAVINGS" : k.type === "BUSINESS_CHEQUING" && kind.ownership === "PERSONAL" ? "PERSONAL_CHEQUING" : k.type;
+    }
+  }
   const textOpening = amountAfter(text, /(opening balance|previous (statement )?balance|balance forward|solde (pr[eé]c[eé]dent|d'ouverture|report[eé])|ancien solde)/);
   const textClosing = amountAfter(text, /(closing balance|new balance|ending balance|nouveau solde|solde (de fermeture|final))/);
 
@@ -310,8 +334,9 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
         const last = sections[sections.length - 1];
         // A table header repeated on a new page continues the same account, unless a new
         // account starts (it opens with a balance brought forward) or it's a second table on the same page.
-        const opensNewAccount = lines.slice(li + 1, li + 4).some((l) => OPENING_ROW.test(l.text.replace(/^\S{1,4}\s+(?=solde|opening|balance)/i, "")));
-        if (!last || sectionKey(name) === last.key) startSection(name);
+        // "Balance brought forward" at the top of a page continues the same account.
+        const opensNewAccount = lines.slice(li + 1, li + 4).some((l) => { const t = l.text.replace(/^\S{1,4}\s+(?=solde|opening|balance)/i, ""); return OPENING_ROW.test(t) && !/brought forward|carried forward/i.test(t); });
+        if (!last || (sectionKey(name) && sectionKey(name) === last.key)) startSection(name);
         else if (line.page === lastHeaderPage || opensNewAccount) startSection(name);
         else sec = last;
         lastHeaderPage = line.page;
@@ -384,6 +409,12 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
       if (b) S.closing = balOf(b.amt);
       current = null; pending = null; continue;
     }
+    if (desc && isBalanceLine(desc)) {
+      // Any other balance-only line: it confirms the running balance; it's never a transaction.
+      const b = amounts[amounts.length - 1];
+      if (b) { prevBalance = balOf(b.amt); if (S.opening === null && !S.rows.length) S.opening = prevBalance; else S.closing = prevBalance; }
+      current = null; pending = null; continue;
+    }
 
     // A dated row with text but no amounts: its amounts are probably on the next line.
     if (dateTok && !amounts.length && desc && !SKIP_ROW.test(desc)) {
@@ -408,7 +439,8 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
     // A row with money in or out but no date of its own (several transactions on the same day).
     let undated = false;
     if (!rowDate && !dateTok && cols && mode === "TXN" && /[a-zà-ÿ]{2}/i.test(desc) && !SKIP_ROW.test(desc) &&
-        amounts.some((a) => a.col && ["OUT", "IN", "AMOUNT"].includes(a.col.kind)) && (trailingDate || S.lastDate)) {
+        amounts.some((a) => a.col && ["OUT", "IN", "AMOUNT"].includes(a.col.kind)) &&
+        (trailingDate || (S.lastDate && line.page === pos.page && line.y - pos.y < 40))) {
       rowDate = trailingDate ? new Date(0) : S.lastDate;
       undated = trailingDate;
     }
@@ -544,7 +576,7 @@ function lineByLine(lines: Line[], period: { start: Date | null; end: Date | nul
     const textCells = line.cells.filter((c) => !amountCells.includes(c));
     const text = textCells.map((c) => c.str).join(" ").replace(/\s+/g, " ").trim();
     const dm = text.match(ANY_DATE);
-    if (OPENING_ROW.test(text.replace(ANY_DATE, "").trim())) {
+    if (OPENING_ROW.test(text.replace(ANY_DATE, "").trim()) || (text && isBalanceLine(text.replace(ANY_DATE, " ")))) {
       const a = amountCells.length ? readAmount(amountCells[amountCells.length - 1].str) : null;
       if (a) prevBalance = a.explicitMinus && !a.credit ? -a.cents : a.cents;
       last = null; continue;

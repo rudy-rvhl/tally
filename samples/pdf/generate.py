@@ -323,6 +323,111 @@ def unusual():
         c.drawString(50, y, item); c.drawString(250, y, when); c.drawRightString(450, y, f"{abs(v):,.2f}"); c.drawRightString(540, y, f"{bal:,.2f}")
     c.save()
 
+def scotia_personal():
+    """Scotiabank personal-style layout: a summary box with balances at the top, "Amounts withdrawn /
+    deposited" headings, balance lines inside the table (opening, carried/brought forward, closing)."""
+    c = canvas.Canvas(str(OUT / "scotia-chequing-balances.pdf"), pagesize=letter)
+    def top(page):
+        c.setFont("Helvetica-Bold", 13); c.drawString(50, H - 50, "Scotiabank")
+        c.setFont("Helvetica", 9)
+        c.drawString(50, H - 66, "Basic Bank Account   Account number 12345 00011 22")
+        c.drawString(400, H - 66, f"Page {page} of 2")
+    def header(y):
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(50, y, "Date"); c.drawString(100, y, "Transactions")
+        c.drawRightString(380, y, "Amounts withdrawn ($)"); c.drawRightString(470, y, "Amounts deposited ($)"); c.drawRightString(560, y, "Balance ($)")
+        c.setFont("Helvetica", 8)
+    top(1)
+    c.drawString(50, H - 90, "Here's what happened in your account")
+    c.drawString(50, H - 104, "Opening balance on Aug 31, 2026"); c.drawRightString(300, H - 104, "$1,500.00")
+    c.drawString(50, H - 116, "Minus total withdrawals"); c.drawRightString(300, H - 116, "$1,045.40")
+    c.drawString(50, H - 128, "Plus total deposits"); c.drawRightString(300, H - 128, "$2,200.00")
+    c.drawString(50, H - 140, "Closing balance on Sep 30, 2026"); c.drawRightString(300, H - 140, "= $2,654.60")
+    y = H - 170; header(y)
+    def row(d, desc, out=None, inn=None, bal=None):
+        nonlocal y
+        y -= 13
+        if d: c.drawString(50, y, d)
+        c.drawString(100, y, desc)
+        if out: c.drawRightString(380, y, f"{out:,.2f}")
+        if inn: c.drawRightString(470, y, f"{inn:,.2f}")
+        if bal is not None: c.drawRightString(560, y, f"{bal:,.2f}")
+    row("Aug 31", "Opening Balance", bal=1500.00)
+    row("Sep 2", "Payroll Deposit EXEMPLE INC", inn=2200.00, bal=3700.00)
+    row("Sep 5", "Bill Payment BELL CANADA", out=95.40, bal=3604.60)
+    row(None, "Balance carried forward", bal=3604.60)
+    c.showPage()
+    top(2); y = H - 100; header(y)
+    row(None, "Balance brought forward", bal=3604.60)
+    row("Sep 15", "MB-Transfer to 00011 33", out=900.00, bal=2704.60)
+    row("Sep 30", "Service Charge", out=50.00, bal=2654.60)
+    row("Sep 30", "Closing Balance", bal=2654.60)
+    c.save()
+
+def scotia_fr_placements():
+    """Banque Scotia, French business investment account: "REPORT" is the balance brought forward,
+    headings with accents, a fee table on page 2 and a daily interest calculation table on pages 3-4."""
+    c = canvas.Canvas(str(OUT / "scotia-fr-placements-2025-07.pdf"), pagesize=letter)
+    T = lambda y: H - y
+    acct = "10001 00055 77"
+    def top(page, label, start="juin 30 2025"):
+        c.setFont("Helvetica", 8)
+        c.drawString(18, T(63), "100 RUE EXEMPLE 10001"); c.drawString(18, T(76), "MONTREAL QC H2X 1A1")
+        c.drawString(18, T(112), "EXEMPLE PLACEMENTS INC"); c.drawString(18, T(125), "200 AV DES EXEMPLES")
+        c.drawString(18, T(164), "Relevé de:"); c.drawString(162, T(164), "Numéro de compte:"); c.drawString(306, T(164), "De:"); c.drawString(450, T(164), "À:")
+        c.drawString(18, T(177), label); c.drawString(162, T(177), acct); c.drawString(306, T(177), start); c.drawString(450, T(177), "juil. 31 2025")
+        c.drawString(552, T(752), f"{page} de 4")
+    def summary(y):
+        c.drawString(18, T(y), "Nombre de débits"); c.drawString(162, T(y), "Total - Débits"); c.drawString(306, T(y), "Nombre de crédits"); c.drawString(450, T(y), "Total - Crédits")
+        c.drawString(18, T(y + 12), "3"); c.drawString(162, T(y + 12), "$25,002.50"); c.drawString(306, T(y + 12), "1"); c.drawString(450, T(y + 12), "$812.45")
+    top(1, "Compte d'entreprise")
+    c.drawString(18, T(206), "Sommaire du compte pour cette période:"); summary(233)
+    c.drawString(20, T(276), "Détails du compte:")
+    c.drawString(18, T(292), "Date"); c.drawString(90, T(292), "Description"); c.drawString(301, T(292), "Retraits/Débits ($)"); c.drawString(409, T(292), "Dépôts/Crédits ($)"); c.drawString(556, T(292), "Solde ($)")
+    y = 318
+    def row(d, lines, out=None, inn=None, bal=None):
+        nonlocal y
+        c.drawString(18, T(y), d); c.drawString(90, T(y), lines[0])
+        if out: c.drawRightString(388, T(y), f"{out:.2f}")
+        if inn: c.drawRightString(490, T(y), f"{inn:.2f}")
+        c.drawRightString(590, T(y), f"{bal:,.2f}")
+        for extra in lines[1:]:
+            y += 12.5; c.drawString(95, T(y), extra)
+        y += 12.5
+    row("06/30/2025", ["REPORT"], bal=250000.00)
+    row("07/11/2025", ["VIR. TELEGRAP. TRANSMIS", "EXEMPLE PLACEMENTS INC", "TELEVIREMENT"], out=20000.00, bal=230000.00)
+    row("07/17/2025", ["VIR. TELEGRAP. TRANSMIS", "SOCIETE EXEMPLE", "TELEVIREMENT"], out=5000.00, bal=225000.00)
+    row("07/31/2025", ["INTERETS CREDITEURS"], inn=812.45, bal=225812.45)
+    row("07/31/2025", ["FRAIS DE GESTION"], out=2.50, bal=225809.95)
+    summary(y + 14)
+    c.drawString(18, T(y + 52), "Fr non perçus et/ou int sur déc dus:"); c.drawString(572, T(y + 52), "0.00$")
+    c.drawString(20, T(y + 90), "Veuillez vous reporter aux conditions énoncées dans le Contrat de services financiers de la Banque Scotia.")
+    c.showPage()
+    top(2, "Frais de service")
+    c.drawString(20, T(202), "Effet"); c.drawString(347, T(202), "Volume"); c.drawString(467, T(202), "Taux"); c.drawString(557, T(202), "Frais ($)")
+    c.drawString(20, T(225), "Commiss. sur opérations")
+    c.drawString(25, T(238), "Autres opér. de débit"); c.drawString(375, T(238), "2"); c.drawString(470, T(238), "1.25"); c.drawString(575, T(238), "2.50")
+    c.drawString(20, T(251), "Somme partielle"); c.drawString(575, T(251), "2.50")
+    c.drawString(20, T(274), "Total des frais de gestion"); c.drawString(570, T(274), "$2.50")
+    c.showPage()
+    for page in (3, 4):
+        top(page, "Intérêts sur dépôt", "juil. 01 2025")
+        if page == 3:
+            c.drawString(18, T(201), "Indications"); c.drawString(18, T(226), "Monnaie: CAD"); c.drawString(18, T(249), "Compte de placements d'entreprise")
+            c.drawString(18, T(295), "Taux d'intérêt applicable:"); c.drawString(18, T(307), "Solde intégral")
+        hy = 349 if page == 3 else 160
+        c.drawString(18, T(hy), "Date"); c.drawString(211, T(hy), "Solde fermeture ($)"); c.drawString(378, T(hy), "Rndmt/Taux"); c.drawString(546, T(hy), "Intérêts ($)")
+        days = range(1, 25) if page == 3 else range(25, 32)
+        for i, d in enumerate(days):
+            yy = hy + 23 + i * 12.6
+            bal = 250000.00 if d < 11 else 230000.00 if d < 17 else 225000.00
+            c.drawString(18, T(yy), f"07/{d:02d}/2025"); c.drawString(240, T(yy), f"{bal:,.2f}"); c.drawString(408, T(yy), "3.077"); c.drawString(565, T(yy), "21.08")
+        if page == 4:
+            c.drawString(18, T(hy + 23 + 7 * 12.6 + 20), "Total des intérêts"); c.drawString(551, T(hy + 23 + 7 * 12.6 + 20), "$812.45")
+            c.drawString(205, T(hy + 23 + 7 * 12.6 + 44), f"Porté au crédit de votre compte {acct}.")
+        c.showPage()
+    c.save()
+
 if __name__ == "__main__":
-    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all(); scotia_visa(); unusual()
+    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all(); scotia_visa(); unusual(); scotia_personal(); scotia_fr_placements()
     print("generated", sorted(p.name for p in OUT.glob("*.pdf")))

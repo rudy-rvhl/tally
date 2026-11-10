@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { parsePdf, parseLooseDate, resolveYear } from "@/lib/engine/parsers/pdf";
+import { isBalanceLine, parsePdf, parseLooseDate, resolveYear } from "@/lib/engine/parsers/pdf";
 import { reconcile } from "@/lib/engine/reconcile";
 import { isoDate } from "@/lib/engine/dates";
 import type { AccountTypeName } from "@/lib/engine/types";
@@ -186,5 +186,39 @@ describe("Desjardins business statement with several accounts", () => {
     ]);
     expect(r.transactions.every((t) => !t.warnings.length)).toBe(true);
     expect(r.notes.join(" ")).toMatch(/read it line by line and checked/);
+  });
+
+  it("Banque Scotia (French) investment account: REPORT is the balance, not money; interest table and fee table ignored", async () => {
+    const r = await parsePdf(pdf("scotia-fr-placements-2025-07.pdf"), "BUSINESS_SAVINGS");
+    expect([r.institution, r.accountHint, r.accountTypeHint]).toEqual(["Scotiabank", "5577", "BUSINESS_SAVINGS"]);
+    expect(rows(r)).toEqual([
+      ["2025-07-11", -2000000, "VIR. TELEGRAP. TRANSMIS EXEMPLE PLACEMENTS INC TELEVIREMENT"],
+      ["2025-07-17", -500000, "VIR. TELEGRAP. TRANSMIS SOCIETE EXEMPLE TELEVIREMENT"],
+      ["2025-07-31", 81245, "INTERETS CREDITEURS"],
+      ["2025-07-31", -250, "FRAIS DE GESTION"],
+    ]);
+    expect([r.openingBalanceCents, r.closingBalanceCents]).toEqual([25000000, 22580995]);
+    expect(r.loanPayments ?? []).toEqual([]); // the daily interest table is not a loan
+    expect(balances("BUSINESS_SAVINGS", r).balanced).toBe(true);
+  });
+
+  it("balance lines inside the table (opening, carried / brought forward, closing) are never transactions", async () => {
+    const r = await parsePdf(pdf("scotia-chequing-balances.pdf"), "PERSONAL_CHEQUING");
+    expect(rows(r)).toEqual([
+      ["2026-09-02", 220000, "Payroll Deposit EXEMPLE INC"],
+      ["2026-09-05", -9540, "Bill Payment BELL CANADA"],
+      ["2026-09-15", -90000, "MB-Transfer to 00011 33"],
+      ["2026-09-30", -5000, "Service Charge"],
+    ]);
+    expect(r.sections).toBeUndefined(); // page 2 continues the same account
+    expect([isoDate(r.periodStart!), isoDate(r.periodEnd!)]).toEqual(["2026-08-31", "2026-09-30"]);
+    expect(balances("PERSONAL_CHEQUING", r).balanced).toBe(true);
+  });
+
+  it("recognises balance-only lines in English and French", () => {
+    for (const s of ["REPORT", "BALANCE FORWARD", "Balance brought forward", "Balance carried forward", "Opening Balance", "Closing balance on Sep 30, 2026 =", "Your balance on Sep 30, 2026", "Solde reporté", "Solde au 31 juil. 2025", "Nouveau solde"])
+      expect(isBalanceLine(s), s).toBe(true);
+    for (const s of ["BALANCE TRANSFER", "Minimum balance fee", "REPORT ON BUSINESS SUBSCRIPTION", "INTERETS CREDITEURS", "Solde payé carte Visa"])
+      expect(isBalanceLine(s), s).toBe(false);
   });
 });

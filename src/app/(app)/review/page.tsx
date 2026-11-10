@@ -100,7 +100,8 @@ export default async function ReviewPage() {
                         )}
                         {i.type === "CATEGORY" && <Btn item={i.id} action="accept">{t?.category && t.category.name !== "Uncategorized" ? `Looks right: ${t.category.name}` : "Skip for now"}</Btn>}
                         {i.type === "RECONCILIATION" && (<>
-                          <Link className="btn-primary btn-sm" href={`/accounts/${statements.find((s2) => s2.id === i.statementId)?.accountId ?? ""}`}>See the statement</Link>
+                          {i.statementId ? <Link className="btn-primary btn-sm" href={`/accounts/${statements.find((s2) => s2.id === i.statementId)?.accountId ?? ""}`}>See the statement</Link>
+                            : i.txnId ? <Link className="btn-primary btn-sm" href={`/transactions/${i.txnId}`}>See it</Link> : null}
                           <Btn item={i.id} action="dismiss">Dismiss</Btn>
                         </>)}
                       </div>

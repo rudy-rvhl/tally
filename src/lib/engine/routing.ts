@@ -21,9 +21,9 @@ export function detectAccountType(heading: string): { type: AccountTypeName | nu
   if (has(/line of credit|credit line|marge de cr[eé]dit|scotialine|\bheloc\b|home equity/i, t)) type = "LINE_OF_CREDIT";
   else if (has(/credit card|carte de cr[eé]dit|\bvisa\b|mastercard|american express|\bamex\b|minimum payment|paiement minimum|credit limit|limite de cr[eé]dit|card ?member|titulaire de (la )?carte/i, t))
     type = business ? "BUSINESS_CREDIT_CARD" : "CREDIT_CARD";
-  else if (has(/savings|[eé]pargne|money master|momentum|high interest|investment account|compte placement/i, t))
+  else if (has(/savings|[eé]pargne|money master|momentum|high interest|investment account|placements? d'?entreprise|compte de placements?|compte placement/i, t))
     type = business ? "BUSINESS_SAVINGS" : "PERSONAL_SAVINGS";
-  else if (has(/chequing|checking|ch[eè]ques?\b|business account|operating|op[eé]rations|current account|compte courant|personal account/i, t))
+  else if (has(/chequing|checking|ch[eè]ques?\b|business account|operating|op[eé]rations|current account|compte courant|personal account|basic bank account|bank account/i, t))
     type = ownership === "PERSONAL" ? "PERSONAL_CHEQUING" : "BUSINESS_CHEQUING"; // LedgerIQ's default is business
   return { type, ownership };
 }

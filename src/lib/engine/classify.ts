@@ -68,6 +68,10 @@ export function detectKind(description: string, amountCents: number, accountType
     if (!inflow) return { kind: "LOAN_PAYMENT", confidence: 0.85 };
   }
 
+  // Wires ("VIR. TELEGRAP. TRANSMIS … TELEVIREMENT", "WIRE TRANSFER"): usually money moved between your own
+  // accounts or companies, sometimes a large payment. Treated as money movement, and confirmed in Review.
+  if (has(d, /\b(TELEVIREMENT|TELEGRAP|WIRE|VIR\. TELEGRAP)\b|\bVIR\b\.?\s?(TELEGRAP|INTERNAT|RECU|TRANSMIS|EMIS)/) && !has(d, /\bINTERAC\b/))
+    return { kind: "TRANSFER", confidence: 0.6 };
   if (has(d, /\b(TRANSFER|TFR|XFER|VIREMENT|TRSF)\b/) && !has(d, /\b(E-?TRANSFER|INTERAC E|VIREMENT INTERAC)\b/) && !has(d, /\bANNULATION\b/))
     return { kind: "TRANSFER", confidence: 0.85 };
   // Interac e-transfers: received ones are money in (e.g. rent, customer payments); sent ones need a look.

@@ -49,4 +49,10 @@ describe("Desjardins wording", () => {
     expect(detectKind("Dépôt Mobile", 97500, "BUSINESS_CHEQUING").kind).toBe("INCOME");
     expect(detectKind("Frais fixes d'utilisation", -595, "BUSINESS_CHEQUING").kind).toBe("FEE");
   });
+
+  it("wires are money movement to confirm, not spending", () => {
+    expect(detectKind("VIR. TELEGRAP. TRANSMIS EXEMPLE INC TELEVIREMENT", -10000000, "BUSINESS_SAVINGS")).toEqual({ kind: "TRANSFER", confidence: 0.6 });
+    expect(detectKind("WIRE TRANSFER SENT", -500000, "BUSINESS_CHEQUING").kind).toBe("TRANSFER");
+    expect(detectKind("INTERAC E-TRANSFER SENT", -5000, "BUSINESS_CHEQUING").kind).not.toBe("TRANSFER");
+  });
 });
