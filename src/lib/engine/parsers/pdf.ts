@@ -120,7 +120,7 @@ const HEADER_WORDS: [RegExp, ColKind][] = [
   [/^(remboursement|principal|capital rembours[eé]|principal paid)( \(\$\))?$/i, "PRINCIPAL"],
   [/(withdrawals?|debits?|retraits?|cheques? & debits|paid out|charges?|d[eé]bit|frais|fees?)( \(\$\))?( \$)?$/i, "OUT"],
   [/(deposits?|credits?|d[eé]p[oô]ts?|paid in|payments? (and|&) credits|cr[eé]dit)( \(\$\))?( \$)?$/i, "IN"],
-  [/^(amount|montant|amount \(\$\)|montant \(\$\)|amount \$)$/i, "AMOUNT"],
+  [/^(amount|montant)\s*(\(\s?\$\s?\)|\$)?$/i, "AMOUNT"],
   [/^(balance|solde)( \(\$\))?( \$)?$/i, "BALANCE"],
 ];
 
@@ -231,7 +231,7 @@ function amountAfter(text: string, label: RegExp): number | null {
 
 const OPENING_ROW = /^(opening balance|balance forward|previous (statement )?balance|solde (report[eé]|d'ouverture|pr[eé]c[eé]dent|ant[eé]rieur)|ancien solde)/i;
 const CLOSING_ROW = /^(closing balance|new balance|ending balance|solde (de fermeture|final|actuel)|nouveau solde)/i;
-const SKIP_ROW = /^(total|subtotal|sous-total|totaux|interest charged on|minimum payment|paiement minimum|payment due|page \d)/i;
+const SKIP_ROW = /^(total|sub-?total|sous-total|totaux|interest charged on|minimum payment|paiement minimum|payment due|page \d)/i;
 const NOT_CONTINUATION = /^(reference|r[eé]f[eé]rence|page \d|continued|suite|please|veuillez|account|compte|total|date d'[eé]ch[eé]ance|taux)/i;
 const sectionKey = (s: string) => s.replace(/\((suite|continued|cont'd)\)/gi, "").replace(/\s+/g, " ").trim().toUpperCase();
 
@@ -320,9 +320,19 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
       continue;
     }
 
-    const first = line.cells[0]?.str ?? "";
+    // Rows that start with a reference number before the date (Scotiabank cards: "001  Sep 2  Sep 3  AMAZON…").
+    let lineCells = line.cells;
+    if (!trailingDate && lineCells.length) {
+      const c0 = lineCells[0].str.trim();
+      if (/^\d{1,6}$/.test(c0) && lineCells[1] && DATE_AT_START.test(lineCells[1].str)) lineCells = lineCells.slice(1);
+      else {
+        const m = c0.match(/^\d{1,6}\s+/);
+        if (m && DATE_AT_START.test(c0.slice(m[0].length))) lineCells = [{ ...lineCells[0], str: c0.slice(m[0].length) }, ...lineCells.slice(1)];
+      }
+    }
+    const first = lineCells[0]?.str ?? "";
     const dm = trailingDate ? null : first.match(DATE_AT_START);
-    let cells = line.cells;
+    let cells = lineCells;
     let dateTok: string | null = null;
     const dateCol = trailingDate ? cols?.find((c) => c.kind === "DATE") : undefined;
     if (dateCol) {
@@ -331,7 +341,7 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
     } else if (dm) {
       dateTok = dm[1];
       const rest = first.slice(dm[0].length).trim();
-      cells = [...(rest ? [{ ...line.cells[0], str: rest }] : []), ...line.cells.slice(1)];
+      cells = [...(rest ? [{ ...lineCells[0], str: rest }] : []), ...lineCells.slice(1)];
       if (cells[0] && new RegExp(`^${DATE_TOKEN}$`, "i").test(cells[0].str)) cells = cells.slice(1);
     }
 
@@ -496,11 +506,83 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
     res.periodEnd = new Date(Math.max(...ts));
     notes.push("We couldn't find the statement period printed on this PDF, so we used the first and last transaction dates. Adjust it below if needed.");
   }
-  if (!res.transactions.length) notes.push("We read the PDF but couldn't find transaction lines. Try the CSV or OFX download from your bank instead, or check the PDF isn't a summary page only.");
+  // Layout we don't know: read it line by line (a date anywhere on the line plus an amount).
+  if (!res.transactions.length && !sections.some((x) => x.rows.length)) {
+    const loose = lineByLine(lines, period, fallbackYear, liability, textOpening);
+    if (loose.rows.length) {
+      res.transactions = loose.rows.map((t, i) => ({ ...t, sourceRow: i + 1 }));
+      res.openingBalanceCents ??= textOpening; res.closingBalanceCents ??= textClosing;
+      if (!res.periodStart) {
+        const ts = res.transactions.map((t) => t.date.getTime());
+        res.periodStart = new Date(Math.min(...ts)); res.periodEnd = new Date(Math.max(...ts));
+      }
+      notes.push(loose.checked
+        ? "This statement has an unusual layout, so we read it line by line and checked the amounts against its running balance. Please glance over the preview."
+        : "This statement has an unusual layout, so we read it line by line. Please check every amount, and whether it's money in or out, in the preview.");
+      return res;
+    }
+  }
+  if (!res.transactions.length) notes.push(`We opened this PDF${res.institution ? ` (${res.institution})` : ""} but couldn't recognise any transaction lines in it. If it's a full statement (not a summary page), download the CSV or OFX version from your bank's website instead, or send the PDF to whoever supports your LedgerIQ so its layout can be added.`);
   else if (usedColumns && usedBalance) notes.push("We read the columns on this statement and checked every amount against its running balance.");
   else if (usedColumns) notes.push("We read the money-in and money-out columns on this statement. Please glance over the preview.");
   else notes.push("This statement doesn't have clear column headings, so please check the preview carefully.");
   return res;
+}
+
+/**
+ * Last resort for layouts the column reader doesn't understand: any line with a date somewhere
+ * and at least one amount is a transaction. With two amounts, the last is the running balance,
+ * which then decides money in or out. Lines below a transaction with text only extend its description.
+ */
+function lineByLine(lines: Line[], period: { start: Date | null; end: Date | null }, fallbackYear: number | undefined, liability: boolean, opening: number | null): { rows: ParsedTxn[]; checked: boolean } {
+  const ANY_DATE = new RegExp(`(?<![A-Za-z0-9])(${DATE_TOKEN})(?![A-Za-z0-9])`, "i");
+  const rows: ParsedTxn[] = [];
+  let prevBalance: number | null = opening, checked = false;
+  let last: { t: ParsedTxn; page: number; y: number } | null = null;
+  for (const line of lines) {
+    const amountCells = line.cells.filter((c) => AMOUNT_CELL.test(c.str.trim()));
+    const textCells = line.cells.filter((c) => !amountCells.includes(c));
+    const text = textCells.map((c) => c.str).join(" ").replace(/\s+/g, " ").trim();
+    const dm = text.match(ANY_DATE);
+    if (OPENING_ROW.test(text.replace(ANY_DATE, "").trim())) {
+      const a = amountCells.length ? readAmount(amountCells[amountCells.length - 1].str) : null;
+      if (a) prevBalance = a.explicitMinus && !a.credit ? -a.cents : a.cents;
+      last = null; continue;
+    }
+    if (!dm || !amountCells.length) {
+      if (last && !dm && !amountCells.length && text && /[a-zà-ÿ]{2}/i.test(text) && line.page === last.page && line.y - last.y < 26 && text.length < 80 && !NOT_CONTINUATION.test(text)) {
+        last.t.description = `${last.t.description} ${text}`.trim(); last.y = line.y;
+      } else last = null;
+      continue;
+    }
+    const desc = text.replace(dm[0], " ").replace(new RegExp(`^\\s*${DATE_TOKEN}(?![A-Za-z0-9])`, "i"), " ").replace(/\s+/g, " ").trim();
+    if (!/[a-zà-ÿ]{2}/i.test(desc) || SKIP_ROW.test(desc) || CLOSING_ROW.test(desc)) { last = null; continue; }
+    const ld = parseLooseDate(dm[1]);
+    const date = ld ? resolveYear(ld, period, fallbackYear) : null;
+    if (!date) { last = null; continue; }
+    const amts = amountCells.map((c) => readAmount(c.str)).filter((a): a is Amount => !!a);
+    const amt = amts.length >= 2 ? amts[amts.length - 2] : amts[0];
+    const balance = amts.length >= 2 ? (amts[amts.length - 1].explicitMinus && !amts[amts.length - 1].credit ? -amts[amts.length - 1].cents : amts[amts.length - 1].cents) : null;
+    const warnings: string[] = [];
+    let signed: number;
+    const isCredit = amt.credit || amt.explicitMinus;
+    if (liability) signed = isCredit ? amt.cents : -amt.cents;
+    else if (amt.debit || amt.explicitMinus) signed = -amt.cents;
+    else if (amt.credit) signed = amt.cents;
+    else signed = -amt.cents;
+    if (balance !== null && prevBalance !== null) {
+      const expect = (v: number) => (liability ? prevBalance! - v : prevBalance! + v);
+      if (Math.abs(expect(signed) - balance) > 1 && Math.abs(expect(-signed) - balance) <= 1) signed = -signed;
+      if (Math.abs(expect(signed) - balance) <= 1) checked = true;
+      else warnings.push("The running balance on the statement doesn't match this amount. Please check it.");
+    } else if (!liability && !amt.debit && !amt.credit && !amt.explicitMinus) warnings.push("We couldn't tell from the statement whether this is money in or out. Please check it.");
+    if (balance !== null) prevBalance = balance;
+    else if (prevBalance !== null) prevBalance = liability ? prevBalance - signed : prevBalance + signed;
+    const t: ParsedTxn = { date, amountCents: signed, description: desc, sourceRow: 0, warnings };
+    rows.push(t);
+    last = { t, page: line.page, y: line.y };
+  }
+  return { rows, checked };
 }
 
 /** Plain-text fallback (one statement line per text line), used when no positions are available. */

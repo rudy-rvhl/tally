@@ -162,4 +162,29 @@ describe("Desjardins business statement with several accounts", () => {
     expect(rows(r)).toEqual([["2026-10-15", 100000, "TRANSFER FROM 00098 76"], ["2026-10-30", 412, "INTEREST"]]);
     expect(balances("BUSINESS_SAVINGS", r).balanced).toBe(true);
   });
+
+  it("Scotiabank credit card: rows start with a reference number; credits have a trailing minus; sub-totals ignored", async () => {
+    const r = await parsePdf(pdf("scotia-visa-2026-09.pdf"), "CREDIT_CARD");
+    expect([r.institution, r.accountHint, r.accountTypeHint]).toEqual(["Scotiabank", "2468", "CREDIT_CARD"]);
+    expect(rows(r)).toEqual([
+      ["2026-08-14", 64218, "PAYMENT FROM - *****01*2345"],
+      ["2026-08-16", -21537, "RONA #12345 MONTREAL QC"],
+      ["2026-08-22", -14218, "HYDRO-QUEBEC MONTREAL QC"],
+      ["2026-09-03", -6499, "AMAZON.CA*AB12C AMAZON.CA ON"],
+      ["2026-09-08", 1748, "RETURN AMAZON.CA ON"],
+    ]);
+    expect(balances("CREDIT_CARD", r).balanced).toBe(true);
+  });
+
+  it("unknown layout (no headings we recognise, date mid-line) is read line by line and checked against the running balance", async () => {
+    const r = await parsePdf(pdf("unusual-layout.pdf"), "BUSINESS_CHEQUING");
+    expect(rows(r)).toEqual([
+      ["2026-09-01", -120000, "Office rent"],
+      ["2026-09-05", 250000, "Client payment INV-104"],
+      ["2026-09-12", -9540, "Bell Canada"],
+      ["2026-09-30", -1250, "Bank fee"],
+    ]);
+    expect(r.transactions.every((t) => !t.warnings.length)).toBe(true);
+    expect(r.notes.join(" ")).toMatch(/read it line by line and checked/);
+  });
 });

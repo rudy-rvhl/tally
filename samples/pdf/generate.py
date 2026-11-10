@@ -278,6 +278,51 @@ def scotia_all():
         (["INTEREST"], 4.12, "1030"),
     ], (0, 0.00, 2, 1004.12))
 
+def scotia_visa():
+    """Scotiabank credit card layout: each row starts with a reference number, then the transaction
+    and posting dates; credits have a trailing minus ("500.00-")."""
+    c = canvas.Canvas(str(OUT / "scotia-visa-2026-09.pdf"), pagesize=letter)
+    c.setFont("Helvetica-Bold", 13); c.drawString(50, H - 50, "Scotiabank")
+    c.setFont("Helvetica", 9)
+    c.drawString(50, H - 66, "Scotia Momentum VISA Infinite card")
+    c.drawString(50, H - 78, "Account # 4537 XXXX XXXX 2468")
+    c.drawString(330, H - 66, "Statement Period Aug 13, 2026 - Sep 12, 2026")
+    c.drawString(330, H - 78, "Statement date Sep 12, 2026")
+    c.drawString(50, H - 100, "Previous balance $642.18     Payments/credits -$642.18     Purchases/charges +$405.06")
+    c.drawString(50, H - 112, "New Balance $405.06     Minimum payment $10.00     Payment due date Oct 6, 2026")
+    y = H - 145
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(50, y, "REF.#"); c.drawString(90, y, "TRANS. DATE"); c.drawString(150, y, "POST DATE"); c.drawString(210, y, "DETAILS"); c.drawRightString(560, y, "AMOUNT($)")
+    c.setFont("Helvetica", 8)
+    rows = [
+        ("001", "Aug 14", "Aug 15", "PAYMENT FROM - *****01*2345", "642.18-"),
+        ("002", "Aug 16", "Aug 17", "RONA #12345 MONTREAL QC", "215.37"),
+        ("003", "Aug 22", "Aug 23", "HYDRO-QUEBEC MONTREAL QC", "142.18"),
+        ("004", "Sep 3", "Sep 4", "AMAZON.CA*AB12C AMAZON.CA ON", "64.99"),
+        ("005", "Sep 8", "Sep 9", "RETURN AMAZON.CA ON", "17.48-"),
+    ]
+    for ref, t, p_, d, a in rows:
+        y -= 14
+        c.drawString(50, y, ref); c.drawString(90, y, t); c.drawString(150, y, p_); c.drawString(210, y, d); c.drawRightString(560, y, a)
+    y -= 20; c.drawString(210, y, "SUB-TOTAL CREDITS"); c.drawRightString(560, y, "659.66-")
+    y -= 14; c.drawString(210, y, "SUB-TOTAL DEBITS"); c.drawRightString(560, y, "422.54")
+    c.save()
+
+def unusual():
+    """No column headings we know, dates in the middle of the line, amount then running balance."""
+    c = canvas.Canvas(str(OUT / "unusual-layout.pdf"), pagesize=letter)
+    c.setFont("Helvetica-Bold", 12); c.drawString(50, H - 50, "Caisse Exemple - Activity report")
+    c.setFont("Helvetica", 9)
+    c.drawString(50, H - 70, "Opening balance 2,000.00")
+    y = H - 100
+    c.setFont("Helvetica-Bold", 9); c.drawString(50, y, "Item"); c.drawString(250, y, "When"); c.drawRightString(450, y, "Value"); c.drawRightString(540, y, "Running")
+    c.setFont("Helvetica", 9)
+    bal = 2000.00
+    for item, when, v in [("Office rent", "2026-09-01", -1200.00), ("Client payment INV-104", "2026-09-05", 2500.00), ("Bell Canada", "2026-09-12", -95.40), ("Bank fee", "2026-09-30", -12.50)]:
+        y -= 16; bal = round(bal + v, 2)
+        c.drawString(50, y, item); c.drawString(250, y, when); c.drawRightString(450, y, f"{abs(v):,.2f}"); c.drawRightString(540, y, f"{bal:,.2f}")
+    c.save()
+
 if __name__ == "__main__":
-    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all()
+    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all(); scotia_visa(); unusual()
     print("generated", sorted(p.name for p in OUT.glob("*.pdf")))
