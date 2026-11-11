@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { isBalanceLine, parsePdf, parseLooseDate, resolveYear } from "@/lib/engine/parsers/pdf";
+import { isBalanceLine, isStatementInfo, parsePdf, parseLooseDate, resolveYear } from "@/lib/engine/parsers/pdf";
 import { reconcile } from "@/lib/engine/reconcile";
 import { isoDate } from "@/lib/engine/dates";
 import type { AccountTypeName } from "@/lib/engine/types";
@@ -220,5 +220,27 @@ describe("Desjardins business statement with several accounts", () => {
       expect(isBalanceLine(s), s).toBe(true);
     for (const s of ["BALANCE TRANSFER", "Minimum balance fee", "REPORT ON BUSINESS SUBSCRIPTION", "INTERETS CREDITEURS", "Solde payé carte Visa"])
       expect(isBalanceLine(s), s).toBe(false);
+  });
+
+  it("Amex: credit limit, available credit, minimum payment and the limit beside the previous balance are never money", async () => {
+    const r = await parsePdf(pdf("amex-with-summary.pdf"), "BUSINESS_CREDIT_CARD");
+    expect([r.institution, r.accountHint, r.accountTypeHint]).toEqual(["American Express", "2006", "BUSINESS_CREDIT_CARD"]);
+    expect(rows(r)).toEqual([
+      ["2026-10-03", 125000, "PAYMENT RECEIVED - THANK YOU"],
+      ["2026-10-07", -41266, "HOME DEPOT #7051 MONTREAL"],
+      ["2026-10-14", -9540, "BELL CANADA"],
+      ["2026-10-22", -47035, "RONA #61089 LAVAL"],
+    ]);
+    // "Previous Balance $1,250.00   Credit Limit $15,000.00" on one line: the balance is the amount after the label.
+    expect([r.openingBalanceCents, r.closingBalanceCents]).toEqual([125000, 97841]);
+    expect(balances("BUSINESS_CREDIT_CARD", r).balanced).toBe(true);
+  });
+
+  it("tells statement information from real charges", () => {
+    for (const s of ["Credit Limit", "Available Credit", "Flexible Payment Option Limit", "Cash Advance Limit", "Minimum Payment Due", "Payment due date - minimum payment",
+      "Total of New Charges", "Interest Rates", "Membership Rewards points earned this period: 978", "Limite de crédit", "Crédit disponible", "Paiement minimum", "Previous Balance"])
+      expect(isStatementInfo(s), s).toBe(true);
+    for (const s of ["PAYMENT RECEIVED - THANK YOU", "INTEREST CHARGES", "ANNUAL FEE", "OVERLIMIT FEE", "Over limit fee", "HOME DEPOT #7051", "LIMITED EDITION STORE", "Frais de dépassement de limite"])
+      expect(isStatementInfo(s), s).toBe(false);
   });
 });

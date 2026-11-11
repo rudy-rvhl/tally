@@ -217,7 +217,7 @@ function accountFromLayout(lines: Line[]): string | null {
     for (const c of lines[i].cells) {
       if (!/^(folio|account( number| no\.?)?|n[o°] de compte|num[eé]ro de compte|compte)$/i.test(c.str.trim())) continue;
       for (const l of lines.slice(i + 1, i + 3)) {
-        const hit = l.cells.find((d) => /^\d[\d -]{3,}\d$/.test(d.str.trim()) && d.x2 >= c.x - 20 && d.x <= c.x2 + 60);
+        const hit = l.cells.find((d) => /^[\dX*•][\dX*• -]{3,}\d$/i.test(d.str.trim()) && /\d{4}\s*$/.test(d.str.trim().replace(/\s/g, "")) && d.x2 >= c.x - 20 && d.x <= c.x2 + 60);
         if (hit) return hit.str.replace(/\D/g, "").slice(-4);
       }
     }
@@ -235,6 +235,24 @@ function amountAfter(text: string, label: RegExp): number | null {
 
 const OPENING_ROW = /^(opening balance|balance forward|balance brought forward|brought forward|previous (statement )?balance|beginning balance|starting balance|report\b|solde (report[eé]|d'ouverture|pr[eé]c[eé]dent|ant[eé]rieur|au d[eé]but)|ancien solde)/i;
 const CLOSING_ROW = /^(closing balance|new balance|ending balance|balance carried forward|carried forward|solde (de fermeture|final|actuel|[àa] reporter)|nouveau solde)/i;
+/**
+ * Information printed on a statement that is never money in or out: limits, available credit,
+ * minimum payment, due dates, totals, rates and reward points (English and French). Real charges
+ * that share some of these words ("Interest charges", "Annual fee", "Overlimit fee") don't match.
+ */
+export const STATEMENT_INFO = new RegExp([
+  "credit limit", "limite de cr[eé]dit", "available credit", "credit available", "cr[eé]dit disponible", "spending limit", "limite de d[eé]penses",
+  "cash advance limit", "(?<!(fee|frais|charge)[a-z' ]{0,30})[a-z ]{0,40}\\blimits?\\b(?!\\s*(fee|charge))", "(?<!(frais|fee|charge)[a-zà-ÿ' ]{0,30})limite\\b(?!.*frais)", "limite (d'|pour )?avances?", "available cash", "minimum payment", "minimum due", "paiement minimum", "versement minimum",
+  "payment due", "amount due", "montant (d[uû]|exigible)", "date d'[eé]ch[eé]ance", "due date",
+  "new balance", "previous balance", "statement balance", "nouveau solde", "solde (pr[eé]c[eé]dent|ant[eé]rieur|du relev[eé])",
+  "total (of )?(new |your )?(charges|payments|credits|debits|purchases|activity|fees and interest)", "totaux?\\b",
+  "interest rates?\\b(?! charge)", "annual interest rate", "taux d'int[eé]r[eê]t", "purchase rate",
+  "membership rewards", "rewards? points", "points? (earned|balance|redeemed|gagn|accumul|obtenus)", "scene\\+? points",
+].map((t) => `\\b${t}`).join("|"), "i");
+
+/** Not a transaction: a balance line or statement information. */
+export const isStatementInfo = (desc: string) => STATEMENT_INFO.test(desc) || isBalanceLine(desc);
+
 /**
  * A line that only states a balance ("REPORT", "Balance brought forward", "Your balance on Sep 30, 2026",
  * "Solde au 31 juillet") and is never money in or out, whatever column its number is in.
@@ -399,19 +417,26 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
     const S = sec as (typeof sections)[number] | null;
     if (!S) continue;
 
+    // Two-column summaries ("Previous Balance $4,721.70   Flexible Payment Option Limit $24,500.00"):
+    // the amount right after the label, not the last one on the line.
+    const balanceAmount = () => {
+      if (amounts.length > 1 && textCells.some((t) => t.x > amounts[0].cell.x2 && t.x < amounts[amounts.length - 1].cell.x)) return amounts[0];
+      return amounts[amounts.length - 1];
+    };
     if (OPENING_ROW.test(desc)) {
-      const b = amounts[amounts.length - 1];
+      const b = balanceAmount();
       if (b) { prevBalance = balOf(b.amt); if (S.opening === null) S.opening = prevBalance; }
       current = null; pending = null; continue;
     }
     if (CLOSING_ROW.test(desc)) {
-      const b = amounts[amounts.length - 1];
+      const b = balanceAmount();
       if (b) S.closing = balOf(b.amt);
       current = null; pending = null; continue;
     }
+    if (desc && STATEMENT_INFO.test(desc)) { current = null; pending = null; continue; }
     if (desc && isBalanceLine(desc)) {
       // Any other balance-only line: it confirms the running balance; it's never a transaction.
-      const b = amounts[amounts.length - 1];
+      const b = balanceAmount();
       if (b) { prevBalance = balOf(b.amt); if (S.opening === null && !S.rows.length) S.opening = prevBalance; else S.closing = prevBalance; }
       current = null; pending = null; continue;
     }
@@ -588,7 +613,7 @@ function lineByLine(lines: Line[], period: { start: Date | null; end: Date | nul
       continue;
     }
     const desc = text.replace(dm[0], " ").replace(new RegExp(`^\\s*${DATE_TOKEN}(?![A-Za-z0-9])`, "i"), " ").replace(/\s+/g, " ").trim();
-    if (!/[a-zà-ÿ]{2}/i.test(desc) || SKIP_ROW.test(desc) || CLOSING_ROW.test(desc)) { last = null; continue; }
+    if (!/[a-zà-ÿ]{2}/i.test(desc) || SKIP_ROW.test(desc) || CLOSING_ROW.test(desc) || STATEMENT_INFO.test(desc)) { last = null; continue; }
     const ld = parseLooseDate(dm[1]);
     const date = ld ? resolveYear(ld, period, fallbackYear) : null;
     if (!date) { last = null; continue; }

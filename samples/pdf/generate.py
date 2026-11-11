@@ -475,6 +475,46 @@ def stessa_rent_roll():
     c.setFont("Helvetica", 7); c.drawString(48, T(y + 50), "Report Created: October 31, 2026 9:00 AM"); c.drawString(48, T(y + 62), "Powered by Stessa")
     c.save()
 
+def amex_summary():
+    """Amex-style statement with the account summary Amex prints around the transactions: credit limit,
+    available credit, cash advance limit, minimum payment, due date, interest rates, rewards points.
+    None of these are transactions."""
+    c = canvas.Canvas(str(OUT / "amex-with-summary.pdf"), pagesize=letter)
+    c.setFont("Helvetica-Bold", 14); c.drawString(50, H - 50, "American Express Business Edge Card")
+    c.setFont("Helvetica", 9)
+    c.drawString(50, H - 66, "Account Ending 2006")
+    c.drawString(50, H - 78, "Statement Period Oct 1, 2026 to Oct 31, 2026")
+    c.drawString(330, H - 66, "Payment Due Date Nov 21, 2026"); c.drawRightString(560, H - 78, "Minimum Payment $25.00")
+    c.drawString(50, H - 96, "Previous Balance"); c.drawRightString(250, H - 96, "$1,250.00")
+    c.drawString(50, H - 108, "Payments and Credits"); c.drawRightString(250, H - 108, "-$1,250.00")
+    c.drawString(50, H - 120, "New Charges"); c.drawRightString(250, H - 120, "$978.41")
+    c.drawString(50, H - 132, "New Balance"); c.drawRightString(250, H - 132, "$978.41")
+    c.drawString(330, H - 96, "Credit Limit"); c.drawRightString(560, H - 96, "$15,000.00")
+    c.drawString(330, H - 108, "Available Credit"); c.drawRightString(560, H - 108, "$14,021.59")
+    c.drawString(330, H - 120, "Cash Advance Limit"); c.drawRightString(560, H - 120, "$3,000.00")
+    y = H - 160
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(50, y, "Transaction Date"); c.drawString(130, y, "Posting Date"); c.drawString(200, y, "Details"); c.drawRightString(560, y, "Amount ($)")
+    c.setFont("Helvetica", 9)
+    rows = [("Oct 3", "Oct 4", "PAYMENT RECEIVED - THANK YOU", "-1,250.00"), ("Oct 7", "Oct 8", "HOME DEPOT #7051 MONTREAL", "412.66"),
+            ("Oct 14", "Oct 15", "BELL CANADA", "95.40"), ("Oct 22", "Oct 23", "RONA #61089 LAVAL", "470.35")]
+    for d, p_, desc, amt in rows:
+        y -= 15
+        c.drawString(50, y, d); c.drawString(130, y, p_); c.drawString(200, y, desc); c.drawRightString(560, y, amt)
+    # Right under the transactions, as on real statements:
+    y -= 15; c.drawString(200, y, "Total of New Charges"); c.drawRightString(560, y, "978.41")
+    y -= 13; c.drawString(200, y, "Credit Limit"); c.drawRightString(560, y, "15,000.00")
+    y -= 13; c.drawString(200, y, "Available Credit"); c.drawRightString(560, y, "14,021.59")
+    y -= 13; c.drawString(200, y, "Minimum Payment Due"); c.drawRightString(560, y, "25.00")
+    y -= 26
+    c.drawString(50, y, "Oct 31, 2026"); c.drawString(200, y, "Credit limit as of statement date"); c.drawRightString(560, y, "15,000.00")
+    y -= 13; c.drawString(50, y, "Nov 21, 2026"); c.drawString(200, y, "Payment due date - minimum payment"); c.drawRightString(560, y, "25.00")
+    y -= 26
+    c.drawString(50, y, "Interest Rates"); y -= 13
+    c.drawString(60, y, "Purchases 21.99%    Cash advances 21.99%"); y -= 13
+    c.drawString(50, y, "Membership Rewards points earned this period: 978")
+    c.save()
+
 if __name__ == "__main__":
-    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all(); scotia_visa(); unusual(); scotia_personal(); scotia_fr_placements(); stessa_rent_roll()
+    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all(); scotia_visa(); unusual(); scotia_personal(); scotia_fr_placements(); stessa_rent_roll(); amex_summary()
     print("generated", sorted(p.name for p in OUT.glob("*.pdf")))
