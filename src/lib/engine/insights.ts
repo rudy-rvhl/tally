@@ -12,10 +12,16 @@ export interface Insight { text: string; tone: "up" | "down" | "neutral" | "warn
 
 const list = (names: string[]) => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
 
-export function explainMonth(current: AnalyticTxn[], previous: AnalyticTxn[], month: string, prevMonth: string, currency: string): Insight[] {
+/**
+ * Plain-language summary of a period against the one before. A month by default; pass `period`
+ * for any other span (e.g. a year): its labels and the date range the links should open.
+ */
+export function explainMonth(current: AnalyticTxn[], previous: AnalyticTxn[], month: string, prevMonth: string, currency: string,
+  period?: { cur: string; prev: string; from: string; to: string }): Insight[] {
   const out: Insight[] = [];
   const c = summarize(current), p = summarize(previous);
-  const cur = monthLabel(month, "long").split(" ")[0], prev = monthLabel(prevMonth, "long").split(" ")[0];
+  const cur = period?.cur ?? monthLabel(month, "long").split(" ")[0], prev = period?.prev ?? monthLabel(prevMonth, "long").split(" ")[0];
+  const at = (extra: Partial<Filters>): Partial<Filters> => (period ? { from: period.from, to: period.to, ...extra } : { month, ...extra });
   const delta = c.spendingCents - p.spendingCents;
   if (p.spendingCents > 0 && Math.abs(delta) >= 100) {
     const merchants = compareGroups(groupSpending(current, byMerchant), groupSpending(previous, byMerchant));
@@ -30,34 +36,34 @@ export function explainMonth(current: AnalyticTxn[], previous: AnalyticTxn[], mo
     const why = names.length ? ` Most of the ${delta > 0 ? "increase" : "decrease"} came from ${list(names)}.` : "";
     out.push({
       text: `You spent ${formatMoney(Math.abs(delta), currency)} ${delta > 0 ? "more" : "less"} in ${cur} than in ${prev} (${formatPct(pctChange(c.spendingCents, p.spendingCents))}).${why}`,
-      tone: delta > 0 ? "up" : "down", link: { month, kind: "spending" },
+      tone: delta > 0 ? "up" : "down", link: at({ kind: "spending" }),
     });
     for (const d of drivers) {
       if (Math.abs(d.changeCents) < 2000) continue;
       out.push({
         text: `${d.label}: ${formatMoney(d.currentCents, currency)} in ${cur}, compared with ${formatMoney(d.previousCents, currency)} in ${prev}.`,
-        tone: d.changeCents > 0 ? "up" : "down", link: d.key.startsWith("name:") ? { month, q: d.label } : { month, merchant: d.key },
+        tone: d.changeCents > 0 ? "up" : "down", link: d.key.startsWith("name:") ? at({ q: d.label }) : at({ merchant: d.key }),
       });
     }
   } else if (c.spendingCents > 0 && p.spendingCents === 0) {
-    out.push({ text: `You spent ${formatMoney(c.spendingCents, currency)} in ${cur}. There's no ${prev} data to compare with yet.`, tone: "neutral", link: { month, kind: "spending" } });
+    out.push({ text: `You spent ${formatMoney(c.spendingCents, currency)} in ${cur}. There's no ${prev} data to compare with yet.`, tone: "neutral", link: at({ kind: "spending" }) });
   }
   if (c.incomeCents > 0) {
     out.push({
       text: c.netCashFlowCents >= 0
         ? `You received ${formatMoney(c.incomeCents, currency)} and kept ${formatMoney(c.netCashFlowCents, currency)} after spending.`
         : `You received ${formatMoney(c.incomeCents, currency)}, which is ${formatMoney(-c.netCashFlowCents, currency)} less than you spent.`,
-      tone: c.netCashFlowCents >= 0 ? "down" : "warning", link: { month, kind: "income" },
+      tone: c.netCashFlowCents >= 0 ? "down" : "warning", link: at({ kind: "income" }),
     });
   }
   const top = groupSpending(current, byMerchant).slice(0, 5);
   const topShare = top.reduce((s, g) => s + g.share, 0);
   if (top.length >= 5 && topShare > 0.6) {
-    out.push({ text: `${Math.round(topShare * 100)}% of your spending went to just five suppliers: ${list(top.map((t) => t.label))}.`, tone: "neutral", link: { month, kind: "spending" } });
+    out.push({ text: `${Math.round(topShare * 100)}% of your spending went to just five suppliers: ${list(top.map((t) => t.label))}.`, tone: "neutral", link: at({ kind: "spending" }) });
   }
   const moved = c.movementCents.cardPayments + c.movementCents.transfers + c.movementCents.loanPayments;
   if (moved > 0) {
-    out.push({ text: `${formatMoney(moved, currency)} moved between your own accounts or paid down cards and loans. That isn't counted as spending, so nothing is counted twice.`, tone: "neutral", link: { month, kind: "movement" } });
+    out.push({ text: `${formatMoney(moved, currency)} moved between your own accounts or paid down cards and loans. That isn't counted as spending, so nothing is counted twice.`, tone: "neutral", link: at({ kind: "movement" }) });
   }
   return out;
 }

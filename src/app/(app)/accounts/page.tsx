@@ -38,10 +38,19 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
   const shownMonths = firstShown > 0 ? months.slice(firstShown) : months;
   const offset = months.length - shownMonths.length;
   const companies = await companyTree(user.id);
-  // Several companies: one section per company. Otherwise business / personal, as before.
-  const groups: { key: string; label: string; list: typeof accounts }[] = companies.length > 1
-    ? [...companies.map((c) => ({ key: c.id, label: c.name, list: accounts.filter((a) => a.companyId === c.id) })), { key: "none", label: "No company", list: accounts.filter((a) => !companies.some((c) => c.id === a.companyId)) }]
-    : [{ key: "BUSINESS", label: "Business", list: accounts.filter((a) => a.ownership === "BUSINESS") }, { key: "PERSONAL", label: "Personal", list: accounts.filter((a) => a.ownership === "PERSONAL") }];
+  // Companies (and their buildings): one section per company, then the accounts used by the whole
+  // company, then one group per building. A single company without buildings: business / personal.
+  type Sub = { key: string; label: string | null; list: typeof accounts };
+  const organised = companies.length > 1 || companies.some((c) => c.buildings.length);
+  const groups: { key: string; label: string; subs: Sub[] }[] = organised
+    ? [...companies.map((c) => {
+        const mine = accounts.filter((a) => a.companyId === c.id);
+        return { key: c.id, label: c.name, subs: [
+          { key: `${c.id}-all`, label: c.buildings.length ? "Whole company or several buildings" : null, list: mine.filter((a) => !a.buildingId) },
+          ...c.buildings.map((b) => ({ key: b.id, label: b.name, list: mine.filter((a) => a.buildingId === b.id) })),
+        ] };
+      }), { key: "none", label: "Not in a company yet", subs: [{ key: "none-all", label: null, list: accounts.filter((a) => !companies.some((c) => c.id === a.companyId)) }] }]
+    : [{ key: "BUSINESS", label: "Business", subs: [{ key: "b", label: null, list: accounts.filter((a) => a.ownership === "BUSINESS") }] }, { key: "PERSONAL", label: "Personal", subs: [{ key: "p", label: null, list: accounts.filter((a) => a.ownership === "PERSONAL") }] }];
 
   return (
     <>
@@ -50,13 +59,17 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
         <Link className="btn-primary" href="/import"><Upload className="h-4 w-4" /> Import a statement</Link>
       </>} />
 
-      {groups.map(({ key, label, list }) => {
-        if (!list.length) return null;
+      {organised && <p className="mb-4 text-sm text-slate-500">Accounts are kept apart by company and building. Change where an account belongs on its page, or sort everything at once in <Link className="link" href="/settings/organize">Organize</Link>.</p>}
+      {groups.map(({ key, label, subs }) => {
+        if (!subs.some((x) => x.list.length)) return null;
         return (
-          <section key={key} className="mb-8">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{label}</h2>
+          <section key={key} className={organised ? "mb-8 rounded-2xl border border-slate-200 bg-white/60 p-4 sm:p-5" : "mb-8"} data-testid="company-section">
+            <h2 className={organised ? "mb-4 text-lg font-bold text-slate-900" : "mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500"}>{label}</h2>
+            {subs.filter((x) => x.list.length).map((sub) => (
+            <div key={sub.key} className="mb-5 last:mb-0">
+            {sub.label && <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">{sub.label}</h3>}
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {list.map((a) => {
+              {sub.list.map((a) => {
                 const b = balances[accounts.indexOf(a)];
                 const Icon = isLiability(a.type) ? CreditCard : a.type === "CASH" ? Wallet : Landmark;
                 const st = a.statements[0];
@@ -69,7 +82,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
                         <div className="text-sm text-slate-500">{a.institution}{a.mask ? ` ··${a.mask}` : ""} · {ACCOUNT_TYPE_LABELS[a.type]}</div>
                       </div>
                       {a.currency !== "CAD" && <Badge tone="blue">{a.currency}</Badge>}
-                      {a.building && <Badge>{a.building.name}</Badge>}
+                      {a.building && !organised && <Badge>{a.building.name}</Badge>}
                     </div>
                     <div className="mt-4">
                       {b ? (<>
@@ -87,6 +100,8 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
                 );
               })}
             </div>
+            </div>
+            ))}
           </section>
         );
       })}

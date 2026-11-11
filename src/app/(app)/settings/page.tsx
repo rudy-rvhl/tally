@@ -102,6 +102,7 @@ export default async function SettingsPage() {
               <button className="btn-secondary">Save</button>
             </ActionForm>
           </div>
+          <a href="/settings/organize" className="btn-primary mt-4 inline-flex">Organize everything at once</a>
           <p className="mt-3 text-xs text-slate-500">To put a bank account or card in a company or building, edit the account. If one card is used for several buildings, leave its building empty and choose the building on each transaction.</p>
         </Card>
 

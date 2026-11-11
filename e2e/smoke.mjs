@@ -460,6 +460,32 @@ const csv = await resp.text();
 check(resp.ok() && csv.split("\n").length > 30, "CSV export works");
 check(csv.split("\n")[0].includes('"Company","Building"') && csv.includes("Exemple Gestion Inc.") && csv.includes("12 rue Principale"), "CSV export includes every company, with Company and Building columns");
 
+// 12a. Yearly overview: the fiscal year (August start) adds up its months
+let monthsSum = 0;
+for (const m of ["2026-08", "2026-09", "2026-10"]) { await go(`${BASE}/?month=${m}`); monthsSum += money(await page.locator("a:has-text('Money spent')").first().textContent()); }
+await go(`${BASE}/?month=2026-10`);
+await page.click("[role=tablist][aria-label=Period] >> text=Year");
+await page.waitForURL(/view=year/);
+await page.waitForLoadState("networkidle");
+const yearSpent = money(await page.locator("a:has-text('Money spent')").first().textContent());
+check(Math.abs(yearSpent - monthsSum) < 0.01, `yearly overview = the months added up (${yearSpent} vs ${monthsSum.toFixed(2)})`);
+check(await page.isVisible("text=/fiscal 2026–2027/"), "yearly overview follows the fiscal year");
+await shot("23-overview-year");
+
+// 12c. Organize: everything in its company and building from a plain-words plan
+await go(`${BASE}/settings/organize`);
+await page.fill("[data-testid=organize-plan]", "Exemple Immobilier Inc.: Exemple Immobilier, Business Amex, Operating, Scotia Visa | 12 rue Principale, 40 avenue des Érables, 99 rue Nouvelle\nExemple Gestion Inc.: Personal Chequing |");
+await page.click("[data-testid=organize-preview]");
+await page.waitForSelector("[data-testid=organize-result]", { timeout: 60000 });
+const orgText = await page.locator("[data-testid=organize-result]").innerText();
+check(/99 rue Nouvelle\s+created/.test(orgText) && /Business chequing ··9876/.test(orgText) && /statements are addressed to EXEMPLE IMMOBILIER INC/i.test(orgText), "organize: preview shows buildings to create and why each account goes where");
+await page.click("[data-testid=organize-apply]");
+await page.waitForSelector("text=Everything is organized", { timeout: 60000 });
+await go(`${BASE}/accounts`);
+const sections = await page.locator("[data-testid=company-section]").allInnerTexts();
+check(sections.length >= 2 && sections.some((t) => t.startsWith("Exemple Immobilier Inc.") && t.includes("12 RUE PRINCIPALE")) && sections.some((t) => t.startsWith("Exemple Gestion Inc.") && t.includes("Personal Chequing")), "accounts page: separate section per company, grouped by building");
+await shot("24-accounts-by-company");
+
 // 12b. Header buttons: switch view mode, then sign out
 await go(`${BASE}/`);
 const modeBefore = await page.locator("header button[title^='Switch between']").locator("span.bg-violet-600").count();

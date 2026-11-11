@@ -589,3 +589,12 @@ export async function assignDepositAction(_: ActionState, f: FormData): Promise<
   refresh();
   return { ok: true, message: v === "none" ? "Marked as not rent." : v === "auto" ? "We'll match it automatically again." : "Assigned." };
 }
+
+// ---------- organize companies, buildings, accounts and transactions from a plain-words plan
+export async function organizeAction(text: string, apply: boolean) {
+  const u = await requireUser();
+  const { organize } = await import("@/lib/services/organize");
+  const result = await organize(u.id, text.slice(0, 5000), apply);
+  if (apply && !result.errors.length) refresh();
+  return result;
+}

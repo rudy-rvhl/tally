@@ -29,6 +29,8 @@ export interface ParseResult {
   /** Account type as printed in the statement's heading (chequing, savings, card…), when it says. */
   accountTypeHint?: AccountTypeName | null;
   ownershipHint?: "BUSINESS" | "PERSONAL" | null;
+  /** Who the statement is addressed to, when it's a company ("1001-2002 QUEBEC INC"). */
+  holder?: string | null;
   periodStart: Date | null;
   periodEnd: Date | null;
   openingBalanceCents: number | null;

@@ -211,6 +211,15 @@ export function findPeriod(text: string): { start: Date | null; end: Date | null
   return { start: null, end: null };
 }
 
+/** The company a statement is addressed to: "1001-2002 QUEBEC INC", "20304050 CANADA INC.", "Exemple Placements Inc." */
+const COMPANY_NAME = /^(?:\d{4}-\d{4}\s+qu[eé]bec|\d{6,9}\s+canada|[a-zà-ÿ0-9][\w&.,'’-]*(?:\s+[\w&.,'’-]+){0,5})\s+(inc|lt[eé]e|ltd|limited|corp(oration)?|s\.?e\.?n\.?c\.?)\.?$/i;
+export function statementHolder(lines: Line[]): string | null {
+  const first = lines.filter((l) => l.page === lines[0]?.page).slice(0, 45);
+  const names = first.flatMap((l) => l.cells.map((c) => c.str.trim())).filter((t) => COMPANY_NAME.test(t) && !/bank|banque|caisse|american express|amex|desjardins|scotia|financial|trust/i.test(t));
+  // Numbered companies first: they're the most precise.
+  return names.find((t) => /^\d/.test(t)) ?? names[0] ?? null;
+}
+
 /** Account number printed under a label ("Folio", "Account number") on the next line. */
 function accountFromLayout(lines: Line[]): string | null {
   for (let i = 0; i < Math.min(lines.length, 40); i++) {
@@ -289,6 +298,7 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
   const firstTable = lines.findIndex((l) => detectHeader(l));
   const kind = detectAccountType(lines.slice(0, firstTable > 0 ? firstTable : 30).map((l) => l.text).join("\n"));
   res.accountTypeHint = kind.type; res.ownershipHint = kind.ownership;
+  res.holder = statementHolder(lines);
   if (!kind.type) {
     // The product name can be printed further down ("Compte d'épargne sur mesure", "Compte de placements
     // d'entreprise", "Momentum PLUS Savings Account"): a line naming an account, with no amount and no transfer.
