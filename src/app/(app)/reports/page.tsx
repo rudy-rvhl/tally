@@ -16,6 +16,7 @@ import { InsightList } from "@/components/InsightList";
 import { IncomeVsSpending, MultiLine, StackedBars, TrendChart } from "@/components/charts";
 import { PrintButton } from "@/components/PrintButton";
 import { BankBookExport } from "@/components/BankBookExport";
+import { ReportsTabs } from "@/components/Nav";
 import { accountIdsInScope, resolveScope } from "@/lib/scope";
 
 export const metadata = { title: "Reports" };
@@ -92,6 +93,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
+      <ReportsTabs />
       <PageHeader title={scope.multi ? `Reports · ${scope.label}` : "Reports"} subtitle={scope.multi ? `An automatic monthly summary for ${scope.label}, plus trends over time. The Excel bank book below always includes every company and building.` : "An automatic monthly summary, plus trends over time."} actions={<>
         <MonthPicker month={month} basePath="/reports" extra={raw.period ? `&period=${raw.period}` : ""} latest={latest} />
         <a className="btn-secondary print:hidden" href={`/api/export?month=${month}`}><Download className="h-4 w-4" /> Export {monthLabel(month, "short")}</a>

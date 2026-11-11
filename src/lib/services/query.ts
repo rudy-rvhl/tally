@@ -137,6 +137,7 @@ export async function loadAnalytic(user: Pick<User, "id" | "baseCurrency">, f: F
       id: t.id, date: t.date, kind: t.kind, accountId: t.accountId, merchant: t.merchant?.name ?? null,
       merchantId: t.merchantId, pending: t.status === "PENDING",
       buildingId: t.buildingId ?? t.account.buildingId,
+      tenantId: t.tenantId,
       companyId: t.building?.companyId ?? t.account.companyId,
     };
     if (t.splits.length) {

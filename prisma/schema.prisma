@@ -132,6 +132,7 @@ model User {
   companies     Company[]
   buildings     Building[]
   passwordResets PasswordReset[]
+  tenants        Tenant[]
 }
 
 /// One-time password reset link. Only a hash of the token is stored; it expires and works once.
@@ -175,6 +176,7 @@ model Building {
 
   accounts     Account[]
   transactions Transaction[]
+  tenants      Tenant[]
 
   @@unique([companyId, name])
   @@index([userId])
@@ -215,6 +217,7 @@ model Account {
   transactions Transaction[]
   imports      ImportBatch[]
   statements   Statement[]
+  tenants      Tenant[]
 
   @@index([userId])
 }
@@ -361,6 +364,11 @@ model Transaction {
   excludedReason      String?
   taxCode             String?
   notes               String?
+  /// Tenant whose rent this deposit is. Set by rent matching (tenantConfirmed = false) or by you (true).
+  /// tenantConfirmed with no tenant means "this deposit is not rent".
+  tenantId            String?
+  tenant              Tenant?              @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  tenantConfirmed     Boolean              @default(false)
   /// Overrides the account's building for this one transaction (e.g. a shared card).
   buildingId          String?
   building            Building?            @relation(fields: [buildingId], references: [id], onDelete: SetNull)
@@ -376,6 +384,56 @@ model Transaction {
   @@index([userId, categoryId])
   @@index([transferGroupId])
   @@index([buildingId])
+  @@index([tenantId])
+}
+
+enum TenantStatus {
+  ACTIVE
+  PAST
+  /// An empty unit (no tenant): keeps vacancies on the rent roll.
+  VACANT
+}
+
+/// A tenant's lease in a building (one row per lease; a new lease for the same unit is a new row).
+model Tenant {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  buildingId   String?
+  building     Building?    @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  unit         String?
+  name         String
+  email        String?
+  phone        String?
+  /// Monthly rent in cents.
+  rentCents    Int
+  /// Day of the month the rent is due (1–28).
+  dueDay       Int          @default(1)
+  leaseStart   DateTime?    @db.Date
+  leaseEnd     DateTime?    @db.Date
+  depositCents Int?
+  /// Account the rent is paid into (any account when empty).
+  accountId    String?
+  account      Account?     @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  /// Words that appear on the statement for this tenant's payments, e.g. "TREMBLAY" (the name is used too).
+  matchText    String?
+  status       TenantStatus @default(ACTIVE)
+  notes        String?
+  /// Bedrooms / bathrooms as printed on the rent roll, e.g. "2 / 1".
+  layout       String?
+  sqft         Int?
+  /// When the tenant moved in (the current lease may have started later, at a renewal).
+  moveIn       DateTime?    @db.Date
+  /// "Balance due" from an imported rent roll report (positive = owes you, negative = credit).
+  reportedBalanceCents Int?
+  reportedBalanceAsOf  DateTime? @db.Date
+  /// Where this row came from, e.g. "Rent roll import (Stessa) 2026-11-11".
+  source       String?
+  createdAt    DateTime     @default(now())
+
+  payments Transaction[]
+
+  @@index([userId])
 }
 
 model Split {

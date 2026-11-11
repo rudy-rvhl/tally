@@ -379,6 +379,52 @@ check(Math.abs((await spentNow()) - allSpent) < 0.005, "All companies shows ever
 await go(`${BASE}/spending?month=2026-10&view=buildings`);
 check(await page.isVisible("[data-testid=scope-breakdown]"), "Spending has a By building view");
 
+// 11f. Rent roll and data analysis, under Reports
+await go(`${BASE}/reports?month=2026-10`);
+check(await page.isVisible("aside >> a:has-text('Rent roll')") && await page.isVisible("aside >> a:has-text('Data analysis')"), "Rent roll and Data analysis are under Reports in the side menu");
+check(await page.isVisible("[role=tablist][aria-label=Reports] >> text=Rent roll"), "report pages have tabs");
+await page.click("aside >> a:has-text('Rent roll')");
+await page.waitForURL(/\/reports\/rent-roll/);
+await page.click("a:has-text('Import my rent roll')");
+await page.waitForURL(/\/reports\/rent-roll\/import/);
+await page.setInputFiles("[data-testid=rentroll-input]", path.join(here, "..", "samples", "pdf", "rent-roll-stessa.pdf"));
+await page.waitForSelector("[data-testid=rentroll-summary]", { timeout: 30000 });
+check((await page.locator("text=Matches the report's total").count()) === 2, "rent roll: rent and balance due match the report's totals");
+const bSel = page.locator("select[aria-label='Building for 12 rue Principale']");
+check(/12 rue Principale/.test(await bSel.evaluate((e) => e.options[e.selectedIndex].text)), "rent roll: property matched to the existing building");
+const acctLabel = await page.locator("select[aria-label='Rent account for 12 rue Principale'] option", { hasText: "··9876" }).first().textContent();
+await page.selectOption("select[aria-label='Rent account for 12 rue Principale']", { label: acctLabel.trim() });
+await page.click("[data-testid=rentroll-import]");
+await page.waitForSelector("text=Rent roll imported", { timeout: 60000 });
+await page.click("a:has-text('Open the rent roll')");
+await page.waitForURL(/\/reports\/rent-roll$/);
+await page.waitForLoadState("networkidle");
+await shot("21-rent-roll");
+check(await page.isVisible("a:has-text('Marie Tremblay')") && await page.isVisible("text=Empty unit"), "rent roll: tenants and empty units listed by building");
+await page.locator("[data-testid=findings] summary").first().click().catch(() => {});
+const findingsText = await page.locator("[data-testid=findings]").first().innerText();
+check(/Tenants owe \$4,850\.00 according to your rent roll/.test(findingsText), "rent roll: balance due from the report is flagged");
+check(/below similar units/.test(findingsText) || await page.isVisible("text=/below similar units/"), "rent roll: rent below similar units is flagged");
+check(/no lease or rent on file/.test(findingsText) || await page.isVisible("text=/no lease or rent on file/"), "rent roll: tenant without a lease is flagged");
+await page.click("a:has-text('Marie Tremblay')");
+await page.waitForURL(/tenants\//);
+check(await page.isVisible("text=matched automatically") && await page.isVisible("text=/1,250\.00/"), "rent roll: rent found in the Scotia deposits by amount");
+await go(`${BASE}/reports/rent-roll`);
+if (await page.locator("[data-testid=unmatched] li").count()) {
+  const first = page.locator("[data-testid=unmatched] li").first();
+  await first.locator("select").selectOption({ label: (await first.locator("select option", { hasText: "Sofia Lopez" }).textContent()).trim() });
+  const before = await page.locator("[data-testid=unmatched] li").count();
+  await first.locator("button:has-text('Save')").click();
+  await page.waitForFunction((n) => document.querySelectorAll("[data-testid=unmatched] li").length === n - 1, before, { timeout: 15000 });
+  check(true, "rent roll: an unmatched deposit can be assigned to a tenant");
+} else check(false, "rent roll: unmatched deposits listed");
+await go(`${BASE}/reports/analysis`);
+await shot("22-data-analysis");
+check(await page.isVisible("text=What you don't see") && (await page.locator("[data-testid=findings] li").count()) > 0, "data analysis: findings shown");
+check(/12 rue Principale/.test(await page.locator("[data-testid=property-table]").innerText()), "data analysis: one row per property");
+check((await page.locator("[data-testid=account-table] tbody tr").count()) >= 4, "data analysis: one row per account");
+check(await page.isVisible("nav[aria-label=Sections] >> text=Accounts"), "data analysis: section navigation");
+
 await go(`${BASE}/reports?month=2026-10`);
 check(await page.isVisible("text=Bank book for your accountant"), "bank book download offered on Reports");
 const fyStart = await page.locator("#bb-start").inputValue();

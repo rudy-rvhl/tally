@@ -521,3 +521,71 @@ export async function journalAction(_: ActionState, f: FormData): Promise<Action
   refresh();
   return { ok: true, message: "Journal entry posted." };
 }
+
+// ---------- rent roll
+const dateOrNull = (s: string) => (/^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T00:00:00Z`) : null);
+
+export async function saveTenantAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const u = await requireUser();
+  const name = str(f, "name").slice(0, 120);
+  if (!name) return { error: "Enter the tenant's name." };
+  const rent = parseAmountToCents(str(f, "rent"));
+  if (rent === null || rent <= 0) return { error: "Enter the monthly rent, e.g. 1450.00." };
+  const dueDay = Math.min(28, Math.max(1, Number(str(f, "dueDay")) || 1));
+  const deposit = str(f, "deposit") ? parseAmountToCents(str(f, "deposit")) : null;
+  const buildingId = str(f, "buildingId") || null;
+  if (buildingId && !(await prisma.building.findFirst({ where: { id: buildingId, userId: u.id } }))) return { error: "Building not found." };
+  const accountId = str(f, "accountId") || null;
+  if (accountId && !(await prisma.account.findFirst({ where: { id: accountId, userId: u.id } }))) return { error: "Account not found." };
+  const leaseStart = dateOrNull(str(f, "leaseStart")), leaseEnd = dateOrNull(str(f, "leaseEnd"));
+  if (leaseStart && leaseEnd && leaseEnd < leaseStart) return { error: "The lease end is before its start." };
+  const data = {
+    name, unit: str(f, "unit").slice(0, 30) || null, email: str(f, "email").slice(0, 120) || null, phone: str(f, "phone").slice(0, 40) || null,
+    rentCents: rent, dueDay, depositCents: deposit && deposit > 0 ? deposit : null, buildingId, accountId, leaseStart, leaseEnd,
+    matchText: str(f, "matchText").slice(0, 200) || null, notes: str(f, "notes").slice(0, 1000) || null,
+    status: (str(f, "status") === "PAST" ? "PAST" : "ACTIVE") as "PAST" | "ACTIVE",
+  };
+  const id = str(f, "id");
+  if (id) {
+    const before = await prisma.tenant.findFirst({ where: { id, userId: u.id } });
+    if (!before) return { error: "Tenant not found." };
+    await prisma.tenant.update({ where: { id }, data });
+    await audit(prisma, u.id, "Tenant", id, "tenant.update", before, data);
+    refresh();
+    return { ok: true, message: "Saved. Payments are matched again with these details." };
+  }
+  const t = await prisma.tenant.create({ data: { ...data, userId: u.id } });
+  await audit(prisma, u.id, "Tenant", t.id, "tenant.create", undefined, data);
+  return { ok: true, redirectTo: `/reports/rent-roll/tenants/${t.id}?added=1` };
+}
+
+export async function moveOutTenantAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const u = await requireUser();
+  const t = await prisma.tenant.findFirst({ where: { id: str(f, "id"), userId: u.id } });
+  if (!t) return { error: "Tenant not found." };
+  const leaseEnd = dateOrNull(str(f, "leaseEnd")) ?? new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+  await prisma.tenant.update({ where: { id: t.id }, data: { status: "PAST", leaseEnd } });
+  await audit(prisma, u.id, "Tenant", t.id, "tenant.move_out", { status: t.status, leaseEnd: t.leaseEnd }, { status: "PAST", leaseEnd });
+  refresh();
+  return { ok: true, message: "Marked as moved out. Their payment history is kept." };
+}
+
+/** Assign a deposit to a tenant ("<tenantId>"), mark it as not rent ("none"), or let matching decide again ("auto"). */
+export async function assignDepositAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const u = await requireUser();
+  const t = await prisma.transaction.findFirst({ where: { id: str(f, "txnId"), userId: u.id } });
+  if (!t) return { error: "Transaction not found." };
+  const v = str(f, "tenantId");
+  let data: { tenantId: string | null; tenantConfirmed: boolean };
+  if (v === "auto") data = { tenantId: null, tenantConfirmed: false };
+  else if (v === "none") data = { tenantId: null, tenantConfirmed: true };
+  else {
+    const tenant = await prisma.tenant.findFirst({ where: { id: v, userId: u.id } });
+    if (!tenant) return { error: "Choose a tenant." };
+    data = { tenantId: tenant.id, tenantConfirmed: true };
+  }
+  await prisma.transaction.update({ where: { id: t.id }, data });
+  await audit(prisma, u.id, "Transaction", t.id, "rent.assign", { tenantId: t.tenantId, tenantConfirmed: t.tenantConfirmed }, data);
+  refresh();
+  return { ok: true, message: v === "none" ? "Marked as not rent." : v === "auto" ? "We'll match it automatically again." : "Assigned." };
+}

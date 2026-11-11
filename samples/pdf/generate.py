@@ -428,6 +428,53 @@ def scotia_fr_placements():
         c.showPage()
     c.save()
 
+def stessa_rent_roll():
+    """Rent roll report laid out like Stessa's "Rent Roll for All Properties" (landscape, fictional tenants)."""
+    from reportlab.lib.pagesizes import landscape
+    W2, H2 = landscape(letter)
+    c = canvas.Canvas(str(OUT / "rent-roll-stessa.pdf"), pagesize=landscape(letter))
+    T = lambda y: H2 - y
+    c.setFont("Helvetica-Bold", 13); c.drawString(39, T(42), "Rent Roll for All Properties")
+    c.setFont("Helvetica", 9); c.drawString(58, T(59), "As of October 31, 2026")
+    c.setFont("Helvetica-Bold", 7.5)
+    c.drawString(93, T(88), "Bed /"); c.drawString(553, T(88), "Balance"); c.drawString(668, T(88), "Lease"); c.drawString(720, T(88), "Lease")
+    c.drawString(59, T(103), "Unit"); c.drawString(93, T(103), "Bath"); c.drawString(131, T(103), "Sq Ft Current Tenant"); c.drawString(468, T(103), "Rent")
+    c.drawString(498, T(103), "Deposit"); c.drawString(571, T(103), "Due"); c.drawString(602, T(103), "Move-In"); c.drawString(672, T(103), "Start"); c.drawString(712, T(103), "Expires")
+    c.setFont("Helvetica", 7.5)
+    y = 117
+    props = [
+        ("12 rue Principale", [
+            ("Unit 01", "2 / 1", None, "Marie Tremblay", "1,250.00", "1,250.00", "01/01/2026", "07/01/2026", "06/30/2027"),
+            ("Unit 02", "1 / 1", None, "Jean Gagnon", "980.00", "-", "03/01/2025", "07/01/2026", "06/30/2027"),
+            ("Unit 03", "2 / 1", None, "Paul roy & Lucie roy", "1,100.00", "(100.00)", "07/01/2024", "07/01/2026", "12/31/2026"),
+            ("Unit 04", "2 / 1", None, "Vacant", None, None, None, None, None),
+            ("Unit 05", "2 / 1", None, "Sofia lopez", "700.00", "2,100.00", "05/01/2023", "05/01/2026", "04/30/2027"),
+        ]),
+        ("40 avenue des Érables", [
+            ("101", "1 / 1", "600", "AHMED FOUDA", "No Lease", "1,500.00", "08/01/2025", "No Lease", "No Lease"),
+            ("102", "2 / 1", "700", "LINDA UPSHAW", "1,450.00", "-", "02/01/2025", "02/01/2026", "01/31/2027"),
+        ]),
+    ]
+    for name, units in props:
+        c.setFont("Helvetica-Bold", 8); c.drawString(48, T(y), name); c.setFont("Helvetica", 7.5); y += 13
+        for unit, bb, sq, tenant, rent, bal, mi, st, ex in units:
+            c.drawString(58, T(y), unit); c.drawString(92, T(y), bb)
+            if sq: c.drawString(136, T(y), sq)
+            c.drawString(158, T(y), tenant)
+            if rent == "No Lease": c.drawString(451, T(y), "No Lease")
+            elif rent: c.drawRightString(484, T(y), rent)
+            if bal: c.drawRightString(590, T(y), bal)
+            if mi:
+                c.drawString(595, T(y), mi)
+                if st == "No Lease": c.drawString(658, T(y), "No Lease"); c.drawString(711, T(y), "No Lease")
+                else: c.drawString(641, T(y), st); c.drawString(687, T(y), ex)
+            y += 13
+        y += 13
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(48, T(y + 10), "TOTAL"); c.drawString(158, T(y + 10), "Occupancy: 86%"); c.drawRightString(484, T(y + 10), "5,480.00"); c.drawString(518, T(y + 10), "-"); c.drawRightString(590, T(y + 10), "4,750.00")
+    c.setFont("Helvetica", 7); c.drawString(48, T(y + 50), "Report Created: October 31, 2026 9:00 AM"); c.drawString(48, T(y + 62), "Powered by Stessa")
+    c.save()
+
 if __name__ == "__main__":
-    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all(); scotia_visa(); unusual(); scotia_personal(); scotia_fr_placements()
+    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all(); scotia_visa(); unusual(); scotia_personal(); scotia_fr_placements(); stessa_rent_roll()
     print("generated", sorted(p.name for p in OUT.glob("*.pdf")))

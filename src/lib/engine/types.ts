@@ -76,4 +76,6 @@ export interface AnalyticTxn {
   /** Effective building (the transaction's own, else its account's). */
   buildingId?: string | null;
   companyId?: string | null;
+  /** Tenant whose rent this is (rent roll). */
+  tenantId?: string | null;
 }
