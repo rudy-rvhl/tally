@@ -143,4 +143,24 @@ if (!PSQL) {
     }
   }
 }
+// 4. Privacy: everything stays on this computer.
+console.log("\nPrivacy\n");
+const localOnly = (process.env.LEDGERIQ_LOCAL_ONLY ?? envFile.LEDGERIQ_LOCAL_ONLY ?? "true").toLowerCase() !== "false";
+if (localOnly) ok("Local-only mode is on: nothing leaves this computer.");
+else bad("Local-only mode is OFF (LEDGERIQ_LOCAL_ONLY=\"false\"): bank connections / AI may use the internet.");
+if (["localhost", "127.0.0.1", "::1"].includes(conn.host)) ok("The database is on this computer.");
+else bad(`The database is on another computer (${conn.host}). Your data is stored there, not here.`);
+if (has("lsof")) {
+  const l = run("lsof", ["-nP", `-iTCP:${conn.port}`, "-sTCP:LISTEN"]);
+  const addrs = (l.stdout || "").split("\n").slice(1).filter(Boolean).map((x) => x.trim().split(/\s+/).find((c) => c.includes(":")) ?? "");
+  const open = addrs.filter((a) => /^\*:|^0\.0\.0\.0:|^\[::\]:/.test(a));
+  if (open.length) { bad(`PostgreSQL accepts connections from other computers on your network (${[...new Set(open)].join(", ")}).`); info("If you use Docker, recreate it with -p 127.0.0.1:5432:5432. For Postgres.app / Homebrew, set listen_addresses = 'localhost' in postgresql.conf."); }
+  else if (addrs.length) ok("PostgreSQL only accepts connections from this computer.");
+}
+if (process.platform === "darwin" && has("fdesetup")) {
+  const fv = run("fdesetup", ["status"]);
+  if (/FileVault is On/i.test(fv.stdout || "")) ok("FileVault disk encryption is on.");
+  else { bad("FileVault disk encryption is off: anyone with the computer could read the database."); info("Turn it on: System Settings → Privacy & Security → FileVault."); }
+}
+if (!localOnly && (envFile.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY)) info("AI help is on: questions and supplier/category/account names are sent to Anthropic.");
 console.log("");

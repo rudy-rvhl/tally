@@ -6,6 +6,8 @@ import { CategoryOptions } from "@/components/CategorySelect";
 import { addCategoryAction, addCompanyAction, addRuleAction, combineMerchantsAction, deleteBuildingAction, deleteCompanyAction, deleteRuleAction, renameCompanyAction, saveBuildingAction, saveCompanyAction, saveRateAction, setBaseCurrencyAction, setModeAction } from "@/app/actions";
 import { defaultCompany } from "@/lib/scope";
 import { aiEnabled } from "@/lib/services/ai";
+import { databaseIsLocal, localOnly } from "@/lib/privacy";
+import { plaidKeysPresent } from "@/lib/services/plaid";
 import { monthKey } from "@/lib/engine/dates";
 import { ServerActionForm } from "@/components/ServerActionForm";
 
@@ -46,7 +48,33 @@ export default async function SettingsPage() {
               <select id="bc" name="currency" defaultValue={user.baseCurrency} className="input"><option value="CAD">Canadian dollars (CAD)</option><option value="USD">US dollars (USD)</option></select></div>
             <button className="btn-secondary">Save</button>
           </ServerActionForm>
-          <p className="mt-4 text-sm text-slate-500">AI help with questions: {aiEnabled() ? <Badge tone="green">On</Badge> : <Badge>Off</Badge>} {aiEnabled() ? "AI only interprets your question. All amounts are calculated from your data." : "Questions are understood with built-in rules. Set ANTHROPIC_API_KEY on the server to enable AI interpretation."}</p>
+          <p className="mt-4 text-sm text-slate-500">AI help with questions: {aiEnabled() ? <Badge tone="green">On</Badge> : <Badge>Off</Badge>} {aiEnabled() ? "AI only interprets your question. All amounts are calculated from your data." : "Questions are understood with built-in rules, on this computer."}</p>
+        </Card>
+
+        <Card title="Privacy" subtitle="What stays on this computer." className="lg:col-span-2">
+          <div id="privacy" />
+          {(() => {
+            const lo = localOnly(), db = databaseIsLocal();
+            const rows: [boolean, string, string][] = [
+              [lo, `Local-only mode is ${lo ? "on" : "OFF"}`, lo ? "Every connection that isn't to this computer is refused, so nothing can be sent anywhere, even by mistake." : "LedgerIQ may reach Plaid (bank connections) and Anthropic (AI help) when their keys are set, and nothing else. Set LEDGERIQ_LOCAL_ONLY=\"true\" in .env to turn it back on."],
+              [db, db ? "Your data is in a database on this computer" : "Your database is NOT on this computer", db ? "PostgreSQL on this computer. Run `npm run doctor` to check it only accepts connections from this computer." : "DATABASE_URL in .env points to another computer or an online service. Point it to localhost to keep everything here."],
+              [true, "Only this computer can open LedgerIQ", "`npm run dev` and `npm start` listen on 127.0.0.1, so other devices on your network can't reach it. Pages can't load anything from, or send anything to, another website."],
+              [!aiEnabled(), aiEnabled() ? "AI help is on" : "AI help is off", aiEnabled() ? "Your questions and your supplier, category and account names are sent to Anthropic to interpret the question." : lo && process.env.ANTHROPIC_API_KEY ? "An Anthropic key is set but ignored in local-only mode." : "Questions are understood on this computer."],
+              [lo || !plaidKeysPresent(), lo || !plaidKeysPresent() ? "No bank connections over the internet" : "Bank connections are on", lo || !plaidKeysPresent() ? "Transactions come only from the statements you import." : "Transactions come from your banks through Plaid's servers."],
+              [true, "Statements and receipts are encrypted", "The original files are stored encrypted with the key in your .env file. Keep a copy of that key somewhere safe."],
+              [true, "Turn on disk encryption", "On a Mac: System Settings → Privacy & Security → FileVault. It protects the whole database if the computer is lost or stolen. `npm run doctor` tells you if it's on."],
+            ];
+            return (
+              <ul className="grid gap-3 sm:grid-cols-2" data-testid="privacy">
+                {rows.map(([ok, title, detail]) => (
+                  <li key={title} className="flex gap-3 rounded-xl border border-slate-100 p-3">
+                    <span className={`mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full ${ok ? "bg-emerald-500" : "bg-amber-500"}`} />
+                    <div><div className="text-sm font-semibold text-slate-900">{title}</div><div className="text-xs text-slate-600">{detail}</div></div>
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
         </Card>
 
         <Card title="Companies & buildings" subtitle="Each company's name is printed on its pages of the bank book. Buildings keep each property's money separate on screen; the bank book download always includes everything." className="lg:col-span-2">

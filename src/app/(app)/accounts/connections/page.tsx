@@ -3,6 +3,7 @@ import { Landmark, ShieldCheck, AlertTriangle, CheckCircle2, Unplug } from "luci
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { plaidConfigured, plaidEnv } from "@/lib/services/plaid";
+import { localOnly } from "@/lib/privacy";
 import { formatDate } from "@/lib/engine/dates";
 import { formatMoney } from "@/lib/engine/money";
 import { Badge, Card, EmptyState, Notice, PageHeader } from "@/components/ui";
@@ -27,7 +28,14 @@ export default async function ConnectionsPage() {
         subtitle="Connect your banks once and new transactions come in by themselves, every few hours while LedgerIQ is running."
         actions={configured ? <ConnectBankButton /> : undefined} />
 
-      {!configured ? (
+      {localOnly() ? (
+        <Card title="Local-only mode is on" subtitle="Nothing leaves this computer, so LedgerIQ doesn't connect to your banks over the internet.">
+          <p className="text-sm text-slate-700">Keep importing your statements (Import → several at once): it&apos;s fully private. Connecting a bank means your transactions travel from the bank through Plaid&apos;s servers to this computer, every few hours.</p>
+          <details className="mt-3 text-sm text-slate-600"><summary className="cursor-pointer font-medium text-slate-700">If you decide to allow it</summary>
+            <p className="mt-2">In the <code className="rounded bg-slate-100 px-1">.env</code> file, set <code className="rounded bg-slate-100 px-1">LEDGERIQ_LOCAL_ONLY=&quot;false&quot;</code> and add your Plaid keys, then restart LedgerIQ. Even then, LedgerIQ can only reach Plaid&apos;s servers (and Anthropic&apos;s, if you add an AI key), nothing else.</p></details>
+          {conns.some((c) => c.status !== "DISCONNECTED") && <p className="mt-3 text-xs text-slate-500">Existing connections are paused. Their transactions stay in LedgerIQ.</p>}
+        </Card>
+      ) : !configured ? (
         <Card title="Set up bank connections (once)" subtitle="LedgerIQ connects to Canadian banks (Desjardins, Scotiabank, American Express and most others) through Plaid, the service many accounting apps use.">
           <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-700">
             <li>Create a free account at <a className="link" href="https://dashboard.plaid.com/signup" target="_blank" rel="noreferrer">dashboard.plaid.com</a>, then open <em>Developers → Keys</em>.</li>

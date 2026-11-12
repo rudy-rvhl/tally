@@ -8,8 +8,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { QuerySpecSchema, type AskEntities, type QuerySpec } from "../engine/ask";
 import { log } from "../log";
+import { localOnly } from "../privacy";
 
-export const aiEnabled = () => !!process.env.ANTHROPIC_API_KEY;
+// The question and your supplier / category / account names would go to Anthropic: never in local-only mode.
+export const aiEnabled = () => !!process.env.ANTHROPIC_API_KEY && !localOnly();
 
 export async function interpretWithAI(question: string, entities: AskEntities, today: string): Promise<QuerySpec | null> {
   if (!aiEnabled()) return null;

@@ -5,10 +5,14 @@
  *   PLAID_ENV                          "sandbox" (test banks) or "production" (your real banks)
  *   PLAID_REDIRECT_URI                 optional; needed for banks that sign you in on their own site (OAuth)
  */
+import { localOnly } from "../privacy";
+
 const HOSTS: Record<string, string> = { sandbox: "https://sandbox.plaid.com", production: "https://production.plaid.com" };
 
 export const plaidEnv = () => (process.env.PLAID_ENV ?? "sandbox").toLowerCase();
-export const plaidConfigured = () => !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
+/** Bank connections need the internet (your bank → Plaid → this computer): off in local-only mode. */
+export const plaidConfigured = () => !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET) && !localOnly();
+export const plaidKeysPresent = () => !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
 const base = () => process.env.PLAID_BASE_URL ?? HOSTS[plaidEnv()] ?? HOSTS.sandbox; // PLAID_BASE_URL: tests only
 
 export class PlaidError extends Error {
@@ -18,6 +22,7 @@ export class PlaidError extends Error {
 }
 
 async function call<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  if (localOnly()) throw new PlaidError("LOCAL_ONLY", "CONFIG", "Local-only mode is on, so LedgerIQ doesn't connect to banks over the internet. Import statements instead, or turn local-only mode off (Settings → Privacy).");
   if (!plaidConfigured()) throw new PlaidError("NOT_CONFIGURED", "CONFIG", "Bank connections aren't set up: add PLAID_CLIENT_ID and PLAID_SECRET to the .env file.");
   let res: Response;
   try {
