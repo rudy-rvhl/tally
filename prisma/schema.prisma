@@ -133,6 +133,7 @@ model User {
   buildings     Building[]
   passwordResets PasswordReset[]
   tenants        Tenant[]
+  bankConnections BankConnection[]
 }
 
 /// One-time password reset link. Only a hash of the token is stored; it expires and works once.
@@ -218,6 +219,7 @@ model Account {
   imports      ImportBatch[]
   statements   Statement[]
   tenants      Tenant[]
+  bankFeeds    BankFeedAccount[]
 
   @@index([userId])
 }
@@ -531,4 +533,58 @@ model JournalLine {
   debitCents  Int          @default(0)
   creditCents Int          @default(0)
   memo        String?
+}
+
+enum BankConnectionStatus {
+  OK
+  /// The bank asks you to sign in again (e.g. a changed password, or the bank's own periodic re-check).
+  NEEDS_LOGIN
+  ERROR
+  DISCONNECTED
+}
+
+/// A connection to a bank through an aggregator (Plaid). Your banking password is never seen or stored;
+/// only the aggregator's access token is kept, encrypted.
+model BankConnection {
+  id              String               @id @default(cuid())
+  userId          String
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider        String               @default("plaid")
+  itemId          String
+  accessToken     Bytes // AES-256-GCM encrypted
+  institutionId   String?
+  institutionName String
+  /// Position in the bank's transaction history (Plaid /transactions/sync cursor).
+  cursor          String?
+  status          BankConnectionStatus @default(OK)
+  lastSyncAt      DateTime?
+  lastError       String?
+  createdAt       DateTime             @default(now())
+
+  accounts BankFeedAccount[]
+
+  @@unique([provider, itemId])
+  @@index([userId])
+}
+
+/// One account at the bank, and the LedgerIQ account its transactions go into (none = not synced).
+model BankFeedAccount {
+  id                  String         @id @default(cuid())
+  connectionId        String
+  connection          BankConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  externalId          String
+  name                String
+  officialName        String?
+  mask                String?
+  type                String?
+  subtype             String?
+  currency            String?
+  currentBalanceCents Int?
+  availableBalanceCents Int?
+  balanceAt           DateTime?
+  accountId           String?
+  account             Account?       @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  createdAt           DateTime       @default(now())
+
+  @@unique([connectionId, externalId])
 }

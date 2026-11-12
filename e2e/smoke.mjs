@@ -314,6 +314,49 @@ await page.setInputFiles("[data-testid=bulk-input]", [path.join(here, "..", "sam
 await page.waitForFunction(() => document.querySelectorAll("[data-testid=bulk-row]").length === 1 && !document.body.innerText.includes("Reading…"), null, { timeout: 60000 });
 check(await page.isVisible("text=You already imported this exact file"), "bulk: a re-uploaded file is recognised and left out");
 
+// 11d3. Bank connection (Plaid): automatic updates, no duplicates with imported statements
+if (process.env.TEST_PLAID === "1") {
+  const { startFakePlaid } = await import("./fake-plaid.mjs");
+  const fake = await startFakePlaid(3999);
+  const lt = await page.request.post(`${BASE}/api/bank/link-token`, { data: {} });
+  check(lt.ok() && (await lt.json()).linkToken === "link-sandbox-test", "bank: a sign-in session can be opened");
+  const ex = await page.request.post(`${BASE}/api/bank/exchange`, { data: { publicToken: "public-sandbox-test" } });
+  const exBody = await ex.json();
+  check(ex.ok() && exBody.sync?.added === 4, `bank: connected and new transactions brought in, the one already in the statement skipped (${JSON.stringify(exBody.sync)})`);
+  await go(`${BASE}/accounts/connections`);
+  check(await page.isVisible("text=Scotiabank") && (await page.locator("[data-testid=bank-feed-account]").count()) === 2, "bank: connection and its accounts listed");
+  const feedRow = (mask) => page.locator("[data-testid=bank-feed-account]").filter({ has: page.locator("div.font-medium", { hasText: mask }) });
+  const chqSel = feedRow("··9876").locator("select");
+  check(/··9876/.test(await chqSel.evaluate((e) => e.options[e.selectedIndex].text)), "bank: account matched by bank and last 4 digits");
+  const chqHref = await (await page.request.get(`${BASE}/accounts`)).text().then((h) => (h.match(/href="(\/accounts\/[a-z0-9]+)"[^>]*>(?:(?!<\/a>).)*Business chequing ··9876/s) || [])[1]);
+  const countRows = async (q) => { const csv = await (await page.request.get(`${BASE}/api/export?q=${encodeURIComponent(q)}`)).text(); return csv.split("\n").filter((l) => l.includes(q)).length; };
+  check(await countRows("RONA #12345") === 1, "bank: a transaction already imported from a statement isn't duplicated");
+  // Map the card later: "New account" brings in its history.
+  const cardRow = feedRow("··4242");
+  await cardRow.locator("select").selectOption("new");
+  await cardRow.locator("button:has-text('Save')").click();
+  await page.waitForSelector("text=Saved and synced.", { timeout: 30000 });
+  check(await countRows("HOME DEPOT #7051 MONTREAL") >= 1, "bank: a newly mapped account gets its history");
+  // The bank changes things: the pending Amazon charge posts, Uber is cancelled, Hydro is corrected.
+  await fetch("http://localhost:3999/__phase2", { method: "POST" });
+  await go(`${BASE}/accounts/connections`);
+  await page.locator("[data-testid=bank-connection]").first().locator("[data-testid=bank-sync]").click();
+  await page.waitForSelector("[data-testid=bank-sync-result]", { timeout: 30000 });
+  const syncText = await page.locator("[data-testid=bank-sync-result]").textContent();
+  check(/0 new, 2 updated, 1 removed by the bank/.test(syncText), `bank: posted, corrected and cancelled transactions handled (${syncText})`);
+  const amazon = (await (await page.request.get(`${BASE}/api/export?q=AMAZON.CA%20MARKETPLACE`)).text()).split("\n").filter((l) => l.includes("AMAZON.CA MARKETPLACE"));
+  check(amazon.length === 1 && amazon[0].includes('"-52.30"') && amazon[0].includes('"Posted"'), `bank: the pending charge became the posted one, not a second row (${amazon.length})`);
+  check((await (await page.request.get(`${BASE}/api/export?q=HYDRO-QUEBEC`)).text()).includes('"-145.00"'), "bank: a corrected amount is updated");
+  await page.locator("[data-testid=bank-connection]").first().locator("[data-testid=bank-sync]").click();
+  await page.waitForFunction(() => /0 new, 0 updated/.test(document.querySelector("[data-testid=bank-sync-result]")?.textContent ?? ""), null, { timeout: 30000 });
+  check(true, "bank: syncing again brings nothing twice");
+  await go(`${BASE}/accounts`);
+  check(await page.isVisible("text=Updates automatically"), "bank: connected accounts show they update automatically");
+  await shot("25-bank-connections");
+  void chqHref;
+  fake.close();
+}
+
 // 11e. Companies and buildings: kept apart on screen, all together in the bank book
 await go(`${BASE}/settings`);
 check(await page.locator("[data-testid=company]").count() === 1, "a new user starts with one company");
@@ -462,7 +505,7 @@ check(csv.split("\n")[0].includes('"Company","Building"') && csv.includes("Exemp
 
 // 12a. Yearly overview: the fiscal year (August start) adds up its months
 let monthsSum = 0;
-for (const m of ["2026-08", "2026-09", "2026-10"]) { await go(`${BASE}/?month=${m}`); monthsSum += money(await page.locator("a:has-text('Money spent')").first().textContent()); }
+for (const m of ["2026-08", "2026-09", "2026-10", "2026-11"]) { await go(`${BASE}/?month=${m}`); monthsSum += money(await page.locator("a:has-text('Money spent')").first().textContent()); }
 await go(`${BASE}/?month=2026-10`);
 await page.click("[role=tablist][aria-label=Period] >> text=Year");
 await page.waitForURL(/view=year/);

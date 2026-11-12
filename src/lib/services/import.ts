@@ -74,10 +74,10 @@ export interface RowDecision {
 
 const NO_MERCHANT: TxnKindName[] = ["TRANSFER", "CARD_PAYMENT", "LOAN_PAYMENT", "ADJUSTMENT"];
 
-async function build(userId: string, accountId: string, fileName: string, buf: Buffer, mapping?: ColumnMapping, section?: number) {
+async function build(userId: string, accountId: string, fileName: string, buf: Buffer, mapping?: ColumnMapping, section?: number, preParsed?: Awaited<ReturnType<typeof parseStatement>>) {
   const account = await prisma.account.findFirst({ where: { id: accountId, userId } });
   if (!account) throw new Error("That account wasn't found.");
-  const parsed = await parseStatement(fileName, buf, account.type, mapping, section);
+  const parsed = preParsed ?? await parseStatement(fileName, buf, account.type, mapping, section);
   const ctx = await loadClassifierContext(userId);
   const valid = parsed.transactions.filter((t) => t.date.getTime() > 0);
   const range = valid.length
@@ -87,7 +87,7 @@ async function build(userId: string, accountId: string, fileName: string, buf: B
     ? await prisma.transaction.findMany({ where: { accountId, date: range }, select: { id: true, date: true, amountCents: true, originalDescription: true, externalId: true, fingerprint: true } })
     : [];
   const verdicts = checkDuplicates(parsed.transactions, existing.map((e) => ({ ...e, description: e.originalDescription })));
-  return { account, parsed, ctx, verdicts };
+  return { account, parsed, ctx, verdicts, existing };
 }
 
 export async function previewImport(userId: string, accountId: string, fileName: string, buf: Buffer, mapping?: ColumnMapping, section?: number): Promise<ImportPreview> {
@@ -153,15 +153,34 @@ export interface CommitInput {
   section?: number;
   /** Bulk import (no preview): send rows the reader wasn't sure about to Review. */
   flagWarnings?: boolean;
+  /**
+   * Transactions from a bank connection instead of a file. Imported statements stay the reference:
+   * on dates a statement already covers, a row with the same amount within 3 days is the same transaction.
+   */
+  feed?: { parsed: Awaited<ReturnType<typeof parseStatement>>; label: string; key: string };
 }
 
 export interface CommitResult { batchId: string; imported: number; skippedDuplicates: number; skippedByUser: number; flagged: number; transfersLinked: number; statementId: string | null; months: string[] }
 
 export async function commitImport(input: CommitInput): Promise<CommitResult> {
-  const { userId, accountId, fileName, buf, mapping, decisions } = input;
-  if (buf.length > MAX_FILE_BYTES) throw new Error("This file is larger than 10 MB.");
-  const { account, parsed, ctx, verdicts } = await build(userId, accountId, fileName, buf, mapping, input.section);
-  const sha = createHash("sha256").update(buf).digest("hex");
+  const { userId, accountId, fileName, buf, mapping, decisions, feed } = input;
+  if (!feed && buf.length > MAX_FILE_BYTES) throw new Error("This file is larger than 10 MB.");
+  const { account, parsed, ctx, verdicts, existing } = await build(userId, accountId, fileName, buf, mapping, input.section, feed?.parsed);
+  const sha = createHash("sha256").update(feed ? feed.key : buf).digest("hex");
+  if (feed) {
+    // Periods covered by imported statements for this account.
+    const covered = (await prisma.importBatch.findMany({ where: { accountId, fileType: { not: "BANK_FEED" }, periodStart: { not: null }, periodEnd: { not: null } }, select: { periodStart: true, periodEnd: true } }));
+    const inStatement = (d: Date) => covered.some((c) => d >= c.periodStart! && d <= c.periodEnd!);
+    const used = new Set(verdicts.map((v) => v.matchId).filter(Boolean) as string[]);
+    parsed.transactions.forEach((t, i) => {
+      const v = verdicts[i];
+      if (v.status === "ALREADY_IMPORTED") return;
+      if (v.status === "POSSIBLE_DUPLICATE" && inStatement(t.date)) { verdicts[i] = { ...v, status: "ALREADY_IMPORTED" }; return; }
+      if (!inStatement(t.date)) return;
+      const same = existing.find((e) => !used.has(e.id) && !e.fingerprint.startsWith("fitid:plaid:") && e.amountCents === t.amountCents && Math.abs(e.date.getTime() - t.date.getTime()) <= 3 * 86400000);
+      if (same) { used.add(same.id); verdicts[i] = { status: "ALREADY_IMPORTED", matchId: same.id, reason: "Already in LedgerIQ from an imported statement." }; }
+    });
+  }
   const include = new Set(input.includeAlreadyImported ?? []);
 
   type Row = { i: number; date: Date; amountCents: number; description: string; original: string; externalId?: string; pending: boolean };
@@ -183,9 +202,9 @@ export async function commitImport(input: CommitInput): Promise<CommitResult> {
   const result = await prisma.$transaction(async (db) => {
     const batch = await db.importBatch.create({
       data: {
-        userId, accountId, fileName, fileType: parsed.fileKind, fileSha256: sha, detectedInstitution: parsed.institution, parserName: parsed.parser,
+        userId, accountId, fileName: feed ? feed.label : fileName, fileType: feed ? "BANK_FEED" : parsed.fileKind, fileSha256: sha, detectedInstitution: parsed.institution, parserName: parsed.parser,
         periodStart, periodEnd, rowsDetected: parsed.transactions.length, rowsImported: 0, rowsSkippedDuplicate: skippedDuplicates, rowsFlagged: 0,
-        encryptedFile: encrypt(buf),
+        encryptedFile: feed ? null : encrypt(buf),
       },
     });
     const merchantIds = new Map<string, string>();

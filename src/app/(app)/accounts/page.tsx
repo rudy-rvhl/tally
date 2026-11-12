@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, Upload, CheckCircle2, AlertTriangle, CreditCard, Landmark, Wallet } from "lucide-react";
+import { Plus, Upload, CheckCircle2, AlertTriangle, CreditCard, Landmark, Wallet, Link2, RefreshCw } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { accountCoverage, ACCOUNT_TYPE_LABELS, lastNMonths } from "@/lib/services/options";
@@ -18,7 +18,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const accounts = await prisma.account.findMany({
     where: { userId: user.id }, orderBy: [{ status: "asc" }, { ownership: "asc" }, { name: "asc" }],
-    include: { building: { select: { name: true } }, _count: { select: { transactions: true } }, imports: { orderBy: { createdAt: "desc" }, take: 1 }, statements: { orderBy: { periodEnd: "desc" }, take: 1 } },
+    include: { bankFeeds: { where: { connection: { status: { not: "DISCONNECTED" } } }, select: { connection: { select: { institutionName: true, lastSyncAt: true, status: true } } } }, building: { select: { name: true } }, _count: { select: { transactions: true } }, imports: { orderBy: { createdAt: "desc" }, take: 1 }, statements: { orderBy: { periodEnd: "desc" }, take: 1 } },
   });
   if (!accounts.length) {
     return (
@@ -55,6 +55,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <PageHeader title="Accounts" subtitle="Every bank account and card, and which statements you've imported." actions={<>
+        <Link className="btn-secondary" href="/accounts/connections"><Link2 className="h-4 w-4" /> Bank connections</Link>
         <Link className="btn-secondary" href="/accounts/new"><Plus className="h-4 w-4" /> Add account</Link>
         <Link className="btn-primary" href="/import"><Upload className="h-4 w-4" /> Import a statement</Link>
       </>} />
@@ -95,6 +96,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
                       {a.imports[0] && <span>· last import {formatDate(a.imports[0].createdAt)}</span>}
                       {st && (st.status === "BALANCED" ? <Badge tone="green"><CheckCircle2 className="h-3 w-3" /> Statement balances</Badge> : st.status === "DIFFERENCE" ? <Badge tone="amber"><AlertTriangle className="h-3 w-3" /> Off by {formatMoney(Math.abs(st.differenceCents ?? 0), a.currency)}</Badge> : null)}
                       {a.status === "CLOSED" && <Badge>Closed</Badge>}
+                      {a.bankFeeds[0] && <Badge tone={a.bankFeeds[0].connection.status === "OK" ? "blue" : "amber"} title={a.bankFeeds[0].connection.lastSyncAt ? `Last updated ${formatDate(a.bankFeeds[0].connection.lastSyncAt)}` : undefined}><RefreshCw className="h-3 w-3" /> {a.bankFeeds[0].connection.status === "OK" ? "Updates automatically" : "Bank sign-in needed"}</Badge>}
                     </div>
                   </Link>
                 );

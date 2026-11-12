@@ -18,9 +18,9 @@ export function PageHeader({ title, subtitle, actions, back }: { title: string; 
   );
 }
 
-export function Card({ title, subtitle, action, children, className, padded = true, id }: { title?: React.ReactNode; subtitle?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; className?: string; padded?: boolean; id?: string }) {
+export function Card({ title, subtitle, action, children, className, padded = true, id, "data-testid": testId }: { title?: React.ReactNode; subtitle?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; className?: string; padded?: boolean; id?: string; "data-testid"?: string }) {
   return (
-    <section id={id} className={clsx("card scroll-mt-20", className)}>
+    <section id={id} data-testid={testId} className={clsx("card scroll-mt-20", className)}>
       {(title || action) && (
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
           <div>

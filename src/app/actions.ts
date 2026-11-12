@@ -598,3 +598,34 @@ export async function organizeAction(text: string, apply: boolean) {
   if (apply && !result.errors.length) refresh();
   return result;
 }
+
+// ---------- bank connections
+export async function syncBankAction(connectionId: string) {
+  const u = await requireUser();
+  const conn = await prisma.bankConnection.findFirst({ where: { id: connectionId, userId: u.id } });
+  if (!conn) return { error: "Connection not found." };
+  const { syncConnection } = await import("@/lib/services/bankfeed");
+  const r = await syncConnection(conn.id);
+  refresh();
+  return r;
+}
+
+export async function mapBankAccountAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const u = await requireUser();
+  const { mapFeedAccount, syncConnection } = await import("@/lib/services/bankfeed");
+  try {
+    await mapFeedAccount(u.id, str(f, "feedId"), str(f, "target"));
+    const feed = await prisma.bankFeedAccount.findFirst({ where: { id: str(f, "feedId") } });
+    if (feed) await syncConnection(feed.connectionId);
+  } catch (e) { return { error: (e as Error).message }; }
+  refresh();
+  return { ok: true, message: "Saved and synced." };
+}
+
+export async function disconnectBankAction(_: ActionState, f: FormData): Promise<ActionState> {
+  const u = await requireUser();
+  const { disconnectBank } = await import("@/lib/services/bankfeed");
+  try { await disconnectBank(u.id, str(f, "id")); } catch (e) { return { error: (e as Error).message }; }
+  refresh();
+  return { ok: true, message: "Disconnected. Transactions already brought in are kept." };
+}
