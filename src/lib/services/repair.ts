@@ -20,7 +20,7 @@ import { classify, loadClassifierContext } from "./classifier";
 import { audit } from "./audit";
 import { evaluateStatement } from "./reconciliation";
 import { commitImport } from "./import";
-import { descriptorSimilarity } from "../engine/merchants";
+import { descriptorSimilarity, identifyMerchant } from "../engine/merchants";
 
 const REASON = "Information printed on the statement (a balance or a limit), not a transaction (corrected automatically)";
 /** Bump when the reader improves in a way that should re-check imported statements once. */
@@ -232,4 +232,35 @@ async function rereadBatch(batchId: string) {
   await prisma.reviewItem.create({ data: { userId, type: "RECONCILIATION", statementId: st ?? undefined, message: `We re-read your ${account.institution} statement (${batch.fileName}) with an improved reader: ${wrong.length} line${wrong.length === 1 ? " had" : "s had"} been misread (for example a balance taken as the amount, or money in shown as money out). ${wrong.length === 1 ? "It's" : "They're"} set aside and replaced by the correct amounts, which now match the statement's balances. Your categories and notes were carried over.` } });
   await mark();
   return { replaced: wrong.length, added: res.imported };
+}
+
+/**
+ * Older versions named every Wealthsimple e-transfer "Interac E Transfer" (the ® in "e-Transfer®"
+ * hid the person's name), so a contractor, a tenant and everyone else were one payee. Give each
+ * e-transfer its own payee (the person it went to or came from). Your categories are kept.
+ * Cheap and idempotent: only transactions still filed under a generic e-transfer payee are looked at.
+ */
+export async function splitTransferPayees(): Promise<number> {
+  const generic = await prisma.merchant.findMany({ where: { OR: [{ name: { startsWith: "Interac E", mode: "insensitive" } }, { name: { startsWith: "E Transfer", mode: "insensitive" } }, { name: { startsWith: "E-Transfer", mode: "insensitive" } }] }, select: { id: true, userId: true, name: true } });
+  let moved = 0;
+  for (const g of generic) {
+    const txns = await prisma.transaction.findMany({ where: { merchantId: g.id }, select: { id: true, description: true } });
+    const byName = new Map<string, { key: string; ids: string[] }>();
+    for (const t of txns) {
+      const m = identifyMerchant(t.description);
+      if (!m.name || m.name.toLowerCase() === g.name.toLowerCase() || /^interac\b|^e-?\s?transfer\b/i.test(m.name)) continue;
+      const e = byName.get(m.name) ?? { key: m.key, ids: [] };
+      e.ids.push(t.id);
+      byName.set(m.name, e);
+    }
+    for (const [name, { key, ids }] of byName) {
+      const m = await prisma.merchant.upsert({ where: { userId_name: { userId: g.userId, name } }, update: {}, create: { userId: g.userId, name } });
+      if (key) await prisma.merchantAlias.upsert({ where: { merchantId_pattern: { merchantId: m.id, pattern: key } }, update: {}, create: { merchantId: m.id, pattern: key, source: "SYSTEM" } });
+      await prisma.transaction.updateMany({ where: { id: { in: ids } }, data: { merchantId: m.id } });
+      moved += ids.length;
+    }
+    if (byName.size) await audit(prisma, g.userId, "Merchant", g.id, "repair.split-etransfer", undefined, { payees: [...byName.keys()], transactions: [...byName.values()].reduce((a, v) => a + v.ids.length, 0) });
+  }
+  if (moved) console.log(`  LedgerIQ: ${moved} e-transfer(s) are now listed under the person they were sent to or received from.`);
+  return moved;
 }

@@ -276,6 +276,8 @@ model Merchant {
   name              String
   defaultCategoryId String?
   defaultCategory   Category? @relation(fields: [defaultCategoryId], references: [id], onDelete: SetNull)
+  /// How often it's paid, when you said so (Payee tracker): MONTHLY | QUARTERLY | YEARLY | ONE_TIME | IRREGULAR. Empty = detected.
+  paymentFrequency  String?
   createdAt         DateTime  @default(now())
 
   aliases      MerchantAlias[]

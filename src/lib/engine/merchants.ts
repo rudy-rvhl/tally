@@ -80,7 +80,7 @@ const NOISE_PREFIXES = [
   /^(PRE-?AUTH(ORIZED)?|PREAUTHORIZED)\s+(DEBIT|PAYMENT)\s*/,
   /^(SQ|TST|SP|PY|DD|PP|IN|CKO)\s?\*\s*/,
   /^PAYPAL\s?\*\s?(?=\w)/,
-  /^(ANNULATION\s*-?\s*)?(INTERAC\s+)?(E-?TRANSFER|VIREMENT( INTERAC)?)\s+(SENT|RECEIVED|TO|FROM|ENVOYE|RECU|DE|A)?\s*\/?\s*/,
+  /^(ANNULATION\s*-?\s*)?(INTERAC\s+)?(E-?TRANSFER|VIREMENT( INTERAC)?)\s+(SENT( TO)?|RECEIVED( FROM)?|OUT( TO)?|IN( FROM)?|TO|FROM|ENVOYE( A)?|RECU( DE)?|DE|A)?\s*\/?\s*(?=\S)/,
   /^PAIEMENT FACTURE\s*-?\s*(ACCESD( INTERNET)?)?\s*\/?\s*/,
   /^PAIEMENT DIRECT\s*-?\s*/,
 ];
@@ -90,7 +90,7 @@ const PROVINCES = "(ON|QC|BC|AB|MB|SK|NS|NB|NL|PE|YT|NT|NU|WA|NY|CA|TX|FL)";
 /** Clean a raw bank descriptor into a stable comparison key. Never used for display. */
 export function cleanDescriptor(raw: string): string {
   let s = raw.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  s = s.replace(/\s+/g, " ").trim();
+  s = s.replace(/[®™©]/g, " ").replace(/\s+/g, " ").trim();
   for (const p of NOISE_PREFIXES) s = s.replace(p, "");
   s = s
     .replace(/\*+[A-Z0-9]{4,}\b/g, " ") // *2K3LM9 order refs

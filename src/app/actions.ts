@@ -629,3 +629,19 @@ export async function disconnectBankAction(_: ActionState, f: FormData): Promise
   refresh();
   return { ok: true, message: "Disconnected. Transactions already brought in are kept." };
 }
+
+// ---------- payee tracker
+/** "How often is this paid?" Saved on the payee when one is picked; for words searches it's kept in the page address. */
+export async function payeeFrequencyAction(f: FormData) {
+  const u = await requireUser();
+  const freq = str(f, "freq");
+  const back = new URLSearchParams();
+  for (const k of ["payee", "q", "dir", "n"]) if (str(f, k)) back.set(k, str(f, k));
+  if (str(f, "payee")) {
+    const { setPayeeFrequency } = await import("@/lib/services/payees");
+    await setPayeeFrequency(u.id, str(f, "payee"), freq === "AUTO" ? null : freq);
+    await audit(prisma, u.id, "Merchant", str(f, "payee"), "payee.frequency", undefined, { paymentFrequency: freq === "AUTO" ? null : freq });
+    refresh();
+  } else if (freq && freq !== "AUTO") back.set("freq", freq);
+  redirect(`/reports/payees?${back}`);
+}

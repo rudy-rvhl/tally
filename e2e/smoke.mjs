@@ -471,13 +471,50 @@ check(await page.isVisible("nav[aria-label=Sections] >> text=Accounts"), "data a
 // 11g. Payee tracker: which months a payee wasn't paid
 await go(`${BASE}/reports`);
 check(await page.isVisible("aside >> a:has-text('Payee tracker')"), "Payee tracker is under Reports in the side menu");
-await go(`${BASE}/reports/payees?q=SERVICE%20CHARGE&dir=out&n=12`);
+// Only 2 service charges on record (Sep, Oct): too few to call it monthly by itself, so it's said to be a monthly bill here.
+await go(`${BASE}/reports/payees?q=SERVICE%20CHARGE&dir=out&n=12&freq=MONTHLY`);
 const payeeSummary = await page.locator("[data-testid=payee-summary]").innerText();
 const statuses = await page.locator("[data-testid=payee-months] a").evaluateAll((els) => els.map((e) => e.getAttribute("data-status")));
 if (process.env.TEST_PLAID === "1") check(/Nothing paid in November 2026/.test(payeeSummary) && statuses[statuses.length - 1] === "MISSING", `payee tracker: the missed month is shown (${payeeSummary.slice(0, 90)})`);
 else check(/No month missed/.test(payeeSummary), "payee tracker: no month missed");
 check(statuses.filter((x) => x === "NOT_STARTED").length >= 1 && !statuses.slice(0, -2).includes("MISSING"), "payee tracker: months before the first payment aren't counted as missed");
 await shot("26-payee-tracker");
+// The same payee treated as a yearly payment: the months between aren't missed.
+await page.selectOption("#freq", "YEARLY");
+await page.click("[data-testid=payee-frequency-form] button");
+await page.waitForSelector("[data-testid=payee-type] [data-frequency=YEARLY]");
+const yearly = await page.locator("[data-testid=payee-months] a").evaluateAll((els) => els.map((e) => e.getAttribute("data-status")));
+check(!yearly.includes("MISSING") && yearly.includes("NOT_DUE") && /once a year/.test(await page.locator("[data-testid=payee-summary]").innerText()), "payee tracker: a yearly payment isn't missed in the months between");
+// Overview by type: monthly bills vs one-time / occasional payments.
+const types = await page.locator("[data-testid=payee-types] section").evaluateAll((els) => els.map((e) => e.getAttribute("data-type")));
+check(["MONTHLY", "YEARLY", "ONE_TIME", "IRREGULAR"].every((t) => types.includes(t)), "payee tracker: payees are listed by type (monthly, yearly, one-time, no fixed schedule)");
+const monthlyCount = await page.locator("[data-testid=payee-types] section[data-type=MONTHLY] li").count();
+check(monthlyCount >= 3, `payee tracker: monthly bills are recognised (${monthlyCount})`);
+const oneOff = page.locator("[data-testid=payee-types] section[data-type=ONE_TIME] li a, [data-testid=payee-types] section[data-type=IRREGULAR] li a").first();
+if (await oneOff.count()) {
+  await Promise.all([page.waitForURL(/payee=/), oneOff.click()]);
+  await page.waitForSelector("[data-testid=payee-summary]");
+  const st = await page.locator("[data-testid=payee-months] a").evaluateAll((els) => els.map((e) => e.getAttribute("data-status")));
+  check(!st.includes("MISSING") && /never counted as missed|no month is counted as missed/i.test(await page.locator("[data-testid=payee-summary]").innerText() + await page.locator("[data-testid=payee-frequency-form]").innerText()), "payee tracker: one-time payments are never counted as missed");
+}
+// Saving a type on a payee: it's remembered, and can be put back to automatic.
+await go(`${BASE}/reports/payees`);
+const bill = page.locator("[data-testid=payee-types] section[data-type=MONTHLY] li a").first();
+await Promise.all([page.waitForURL(/payee=/), bill.click()]);
+await page.waitForSelector("[data-testid=payee-type]");
+const billUrl = page.url();
+check((await page.getAttribute("[data-testid=payee-type] [data-frequency]", "data-frequency")) === "MONTHLY" && /detected/.test(await page.locator("[data-testid=payee-type]").innerText()), "payee tracker: a bill paid every month is detected as monthly");
+await page.selectOption("#freq", "ONE_TIME");
+await page.click("[data-testid=payee-frequency-form] button");
+await page.waitForSelector("[data-testid=payee-type] [data-frequency=ONE_TIME]");
+await go(billUrl);
+check((await page.getAttribute("[data-testid=payee-type] [data-frequency]", "data-frequency")) === "ONE_TIME" && /as you chose/.test(await page.locator("[data-testid=payee-type]").innerText()), "payee tracker: the type you choose for a payee is remembered");
+await page.selectOption("#freq", "AUTO");
+await page.click("[data-testid=payee-frequency-form] button");
+await page.waitForSelector("[data-testid=payee-type] [data-frequency=MONTHLY]");
+await go(billUrl);
+check((await page.getAttribute("[data-testid=payee-type] [data-frequency]", "data-frequency")) === "MONTHLY", "payee tracker: back to automatic");
+await shot("27-payee-types");
 
 await go(`${BASE}/reports?month=2026-10`);
 check(await page.isVisible("text=Bank book for your accountant"), "bank book download offered on Reports");

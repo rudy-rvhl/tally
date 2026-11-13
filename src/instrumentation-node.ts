@@ -1,8 +1,9 @@
 /** Server start (Node.js only). */
-import { repairBalanceRows } from "./lib/services/repair";
+import { repairBalanceRows, splitTransferPayees } from "./lib/services/repair";
 
 try {
   await repairBalanceRows();
+  await splitTransferPayees();
   // Re-reading statements can take a little while (OCR): in the background, so the app opens right away.
   import("./lib/services/repair").then((m) => m.rereadMisreadStatements()).catch((e) => console.warn("LedgerIQ: statement re-read skipped:", (e as Error).message.split("\n")[0]));
 } catch (e) {
