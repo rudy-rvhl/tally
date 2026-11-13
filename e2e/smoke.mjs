@@ -640,6 +640,25 @@ await page.fill("#password", "a brand new password");
 await page.click("button:has-text('Sign in')");
 await page.waitForURL(`${BASE}/`, { timeout: 15000 });
 check(true, "old password no longer works, the new one does");
+
+// Supplier check: a supplier's statement against your bank transactions.
+await go(`${BASE}/import/bulk`);
+await page.setInputFiles("[data-testid=bulk-input]", [path.join(here, "..", "samples", "pdf", "wealthsimple-chequing.pdf")]);
+await page.waitForFunction(() => document.querySelectorAll("[data-testid=bulk-row]").length === 1 && !document.body.innerText.includes("Reading…"), null, { timeout: 60000 });
+await page.click("[data-testid=bulk-import]");
+await page.waitForSelector("text=/Imported \\d+ transactions? from 1 statement/", { timeout: 120000 });
+await go(`${BASE}/reports/suppliers`);
+check(await page.isVisible("aside >> a:has-text('Supplier check')"), "Supplier check is under Reports in the side menu");
+await page.setInputFiles("[data-testid=supplier-input]", path.join(here, "..", "samples", "pdf", "supplier-statement-pronto.pdf"));
+await page.waitForSelector("[data-testid=supplier-verdict]", { timeout: 60000 });
+const verdict = await page.locator("[data-testid=supplier-verdict]").innerText();
+check(/1 of 3 payments/.test(verdict) && /1 not found/.test(verdict) && /1 can't be checked yet/.test(verdict), `supplier check: found, not found and not-yet-checkable payments (${verdict})`);
+const supRows = await page.locator("[data-testid=supplier-lines] tbody tr").evaluateAll((els) => els.map((e) => [e.getAttribute("data-kind"), e.getAttribute("data-status")]));
+check(JSON.stringify(supRows.filter(([k]) => k === "PAYMENT").map(([, st]) => st)) === JSON.stringify(["NO_STATEMENT", "FOUND", "NOT_FOUND"]), `supplier check: each payment line has its result (${JSON.stringify(supRows)})`);
+check(/Wealthsimple/.test(await page.locator("[data-testid=supplier-lines] tr[data-status=FOUND]").innerText()), "supplier check: the matching bank payment and its account are shown");
+check((await page.locator("[data-testid=supplier-due]").innerText()).includes("1,350.00") && /Adds up/.test(await page.locator("[data-testid=supplier-math]").innerText()), "supplier check: amount due read and their math checked");
+check(/1,350\.00/.test(await page.locator("[data-testid=supplier-open]").innerText()), "supplier check: what's still owed, by invoice");
+await shot("28-supplier-check");
 await browser.close();
 console.log(failures ? `\n${failures} check(s) failed` : "\nAll checks passed");
 process.exit(failures ? 1 : 0);

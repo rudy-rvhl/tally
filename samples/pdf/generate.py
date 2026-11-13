@@ -551,6 +551,40 @@ def wealthsimple():
     c.drawString(24, T(575), "Page 1 of 1"); c.drawString(258, T(575), "Wealthsimple Payments Inc., 80 Exemple Ave, Toronto, ON")
     c.save()
 
+def supplier_statement():
+    """A supplier's account statement ("État de compte/Statement"), bilingual, with a running balance, an
+    amount due and an aging line, for the fictional client of the Wealthsimple sample. Fictional data."""
+    c = canvas.Canvas(str(OUT / "supplier-statement-pronto.pdf"), pagesize=letter)
+    T = lambda y: H - y
+    c.setFont("Helvetica-Bold", 11); c.drawString(40, T(50), "PRONTO RENOVATION INC."); c.drawString(400, T(50), "État de compte/Statement")
+    c.setFont("Helvetica", 9)
+    c.drawString(40, T(63), "123, rue de l'Exemple"); c.drawString(40, T(75), "Laval, Québec H0H 0H0"); c.drawString(470, T(75), "Date")
+    c.drawString(470, T(90), "2026-11-11")
+    c.drawString(40, T(130), "CLIENT"); c.drawString(400, T(130), "No de Client/Client No.")
+    c.drawString(40, T(143), "EXEMPLE IMMOBILIER INC."); c.drawString(470, T(148), "777")
+    c.drawString(40, T(156), "200 avenue des Exemples")
+    c.drawString(430, T(190), "Montant dû/Amt. due"); c.drawRightString(540, T(204), "$1,350.00")
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(45, T(230), "Date"); c.drawString(170, T(230), "Description"); c.drawString(360, T(230), "Montant/Amt"); c.drawString(470, T(230), "Solde/Balance")
+    c.setFont("Helvetica", 9)
+    rows = [("2026-08-31", "Balance forward", None, 900.00),
+            ("2026-09-02", "INV #1001.", 900.00, None),
+            ("2026-09-15", "PMT #CAq1w2e3.", -900.00, None),
+            ("2026-10-01", "INV #1015.", 900.00, None),
+            ("2026-10-14", "PMT #CAr4t5y6.", -900.00, None),
+            ("2026-10-20", "PMT #CAu7i8o9.", -450.00, None),
+            ("2026-11-02", "INV #1030.", 900.00, None)]
+    y, bal = 248, 0.0
+    for d, desc, amt, opening in rows:
+        bal = opening if opening is not None else round(bal + amt, 2)
+        c.drawString(40, T(y), d); c.drawString(100, T(y), desc)
+        if amt is not None: c.drawRightString(410, T(y), f"{amt:,.2f}")
+        c.drawRightString(540, T(y), f"{bal:,.2f}")
+        y += 14
+    c.drawString(40, T(400), "Courant/Current"); c.drawString(140, T(400), "1-30 jours/days"); c.drawString(470, T(400), "Montant dû/Amt. due")
+    c.drawRightString(90, T(414), "900.00"); c.drawRightString(190, T(414), "450.00"); c.drawRightString(540, T(414), "$1,350.00")
+    c.save()
+
 if __name__ == "__main__":
-    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all(); scotia_visa(); unusual(); scotia_personal(); scotia_fr_placements(); stessa_rent_roll(); amex_summary(); wealthsimple()
+    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all(); scotia_visa(); unusual(); scotia_personal(); scotia_fr_placements(); stessa_rent_roll(); amex_summary(); wealthsimple(); supplier_statement()
     print("generated", sorted(p.name for p in OUT.glob("*.pdf")))
