@@ -134,6 +134,7 @@ model User {
   passwordResets PasswordReset[]
   tenants        Tenant[]
   bankConnections BankConnection[]
+  supplierInvoices SupplierInvoice[]
 }
 
 /// One-time password reset link. Only a hash of the token is stored; it expires and works once.
@@ -589,4 +590,37 @@ model BankFeedAccount {
   createdAt           DateTime       @default(now())
 
   @@unique([connectionId, externalId])
+}
+
+/// A bill from a supplier (an invoice PDF you uploaded). Whether it's paid is worked out from your
+/// bank transactions each time it's shown, so it stays right as statements are imported.
+model SupplierInvoice {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supplier       String
+  /// Another name printed under it ("Pronto Entretien"), also looked for in your bank descriptions.
+  tradeName      String?
+  invoiceNo      String?
+  invoiceDate    DateTime
+  dueDate        DateTime?
+  /// What it's for, as printed ("Pour le mois de JANVIER 2026"), shortened.
+  description    String?
+  billedTo       String?
+  serviceAddress String?
+  buildingId     String?
+  subtotalCents  Int?
+  gstCents       Int?
+  qstCents       Int?
+  totalCents     Int
+  currency       String    @default("CAD")
+  /// A bank payment you linked by hand (otherwise matched automatically).
+  transactionId  String?
+  fileName       String
+  sha256         String
+  file           Bytes // AES-256-GCM encrypted
+  createdAt      DateTime  @default(now())
+
+  @@unique([userId, sha256])
+  @@index([userId, supplier])
 }

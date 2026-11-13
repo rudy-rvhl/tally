@@ -72,9 +72,22 @@ export async function checkSupplierFile(userId: string, fileName: string, buf: B
   const uncovered = (date: string) => !periods.some((ps) => ps.some(([s, e]) => date >= s && date <= e));
 
   const check = checkSupplierStatement(st, bank, uncovered, otherName ? [otherName] : []);
+  // Their invoice lines against the invoices you have on file (by number).
+  const { invoicesOnFile } = await import("./invoices");
+  const files = await invoicesOnFile(userId, st.supplier);
+  const numberIn = (desc: string): string[] => [...(desc.match(/\d{3,}/g) ?? [])];
+  const invoiceFiles: Record<number, { id: string; invoiceNo: string | null; totalCents: number }> = {};
+  for (const e of st.entries.filter((x) => x.kind === "INVOICE")) {
+    const f = files.find((i) => i.invoiceNo && numberIn(e.description).includes(i.invoiceNo.replace(/\D/g, "")));
+    if (f) invoiceFiles[e.line] = { id: f.id, invoiceNo: f.invoiceNo, totalCents: f.totalCents };
+  }
+  const firstDate = st.entries.find((e) => e.kind !== "OPENING")?.date ?? dates[0];
+  const lastDate = st.statementDate ?? dates[dates.length - 1];
+  const onTheirs = new Set(Object.values(invoiceFiles).map((f) => f.id));
+  const notOnTheirStatement = files.filter((i) => !onTheirs.has(i.id) && i.invoiceDate >= firstDate && i.invoiceDate <= lastDate);
   await audit(prisma, userId, "SupplierStatement", "check", "supplier.check", undefined, {
     supplier: st.supplier, entries: st.entries.length, payments: check.payments.length,
     found: check.payments.filter((p) => p.status === "FOUND" || p.status === "FOUND_COMBINED").length,
   });
-  return { fileName, statement: st, check, accounts: relevant.map((a) => ({ id: a.id, label: label.get(a.id)! })), payerAccounts: [...payers].map((id) => label.get(id) ?? "") };
+  return { fileName, statement: st, check, invoiceFiles, invoicesNotOnStatement: notOnTheirStatement, invoicesOnFileCount: files.length, accounts: relevant.map((a) => ({ id: a.id, label: label.get(a.id)! })), payerAccounts: [...payers].map((id) => label.get(id) ?? "") };
 }

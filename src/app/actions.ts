@@ -645,3 +645,11 @@ export async function payeeFrequencyAction(f: FormData) {
   } else if (freq && freq !== "AUTO") back.set("freq", freq);
   redirect(`/reports/payees?${back}`);
 }
+
+// ---------- supplier invoices
+export async function deleteInvoiceAction(f: FormData) {
+  const u = await requireUser();
+  const { deleteInvoice } = await import("@/lib/services/invoices");
+  await deleteInvoice(u.id, str(f, "id"));
+  revalidatePath("/reports/suppliers");
+}

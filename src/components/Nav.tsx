@@ -18,7 +18,7 @@ export const REPORT_PAGES = [
   { href: "/reports/rent-roll", label: "Rent roll", icon: Home },
   { href: "/reports/analysis", label: "Data analysis", icon: LineChart },
   { href: "/reports/payees", label: "Payee tracker", icon: CalendarCheck },
-  { href: "/reports/suppliers", label: "Supplier check", icon: FileCheck2 },
+  { href: "/reports/suppliers", label: "Suppliers", icon: FileCheck2 },
 ];
 const reportActive = (path: string, href: string) => (href === "/reports" ? path === "/reports" : path === href || path.startsWith(href + "/"));
 

@@ -131,6 +131,10 @@ export function SupplierCheck({ currency }: { currency: string }) {
                               {p.status === "FOUND" && p.days !== null && Math.abs(p.days) > 3 && <div className="text-xs text-slate-500">{Math.abs(p.days)} days {p.days > 0 ? "later" : "earlier"} in your bank.</div>}
                             </div>
                           )}
+                          {e.kind === "INVOICE" && (r.invoicesOnFileCount ?? 0) > 0 && (r.invoiceFiles?.[e.line]
+                            ? <a href={`/api/invoices/${r.invoiceFiles[e.line].id}`} target="_blank" rel="noreferrer" className={clsx("text-xs hover:underline", r.invoiceFiles[e.line].totalCents === e.amountCents ? "text-emerald-700" : "font-semibold text-red-700")} data-testid="invoice-on-file">
+                                {r.invoiceFiles[e.line].totalCents === e.amountCents ? "Invoice on file ✓" : `Your copy says ${m(r.invoiceFiles[e.line].totalCents)}`}</a>
+                            : <span className="text-xs text-slate-400">No copy on file</span>)}
                           {c.arithmetic.wrong.some((w) => w.entry.line === e.line) && <div className="text-xs font-semibold text-red-700">Their balance should be {m(c.arithmetic.wrong.find((w) => w.entry.line === e.line)!.expectedCents)}.</div>}
                         </td>
                       </tr>
@@ -141,6 +145,14 @@ export function SupplierCheck({ currency }: { currency: string }) {
             </div>
           </div>
 
+          {(r.invoicesNotOnStatement?.length ?? 0) > 0 && (
+            <div className="card border-l-4 border-l-amber-400 p-5" data-testid="invoices-not-on-statement">
+              <h3 className="font-semibold">Invoices you have that aren&apos;t on their statement</h3>
+              <ul className="mt-2 text-sm">
+                {r.invoicesNotOnStatement!.map((i) => <li key={i.id}><a className="hover:text-brand-700" href={`/api/invoices/${i.id}`} target="_blank" rel="noreferrer">No. {i.invoiceNo ?? "?"} · {fmtDay(i.invoiceDate)} · {m(i.totalCents)}</a></li>)}
+              </ul>
+            </div>
+          )}
           <div className="grid gap-6 lg:grid-cols-2">
             <div className="card p-5" data-testid="supplier-extra">
               <h3 className="font-semibold">Payments you made that aren&apos;t on their statement</h3>

@@ -648,7 +648,22 @@ await page.waitForFunction(() => document.querySelectorAll("[data-testid=bulk-ro
 await page.click("[data-testid=bulk-import]");
 await page.waitForSelector("text=/Imported \\d+ transactions? from 1 statement/", { timeout: 120000 });
 await go(`${BASE}/reports/suppliers`);
-check(await page.isVisible("aside >> a:has-text('Supplier check')"), "Supplier check is under Reports in the side menu");
+check(await page.isVisible("aside >> a:has-text('Suppliers')"), "Suppliers is under Reports in the side menu");
+// Supplier invoices: several at once, read, kept, and matched to payments.
+const invoicePdfs = ["invoice-pronto-1015.pdf", "invoice-pronto-1030.pdf"].map((f) => path.join(here, "..", "samples", "pdf", f));
+await page.setInputFiles("[data-testid=invoice-input]", invoicePdfs);
+await page.waitForSelector("[data-testid=invoice-upload-results]", { timeout: 60000 });
+check(/2 invoices added/.test(await page.locator("[data-testid=invoice-upload-results]").innerText()), "invoices: two uploaded and read");
+await page.waitForSelector("[data-testid=invoice-table] tbody tr >> nth=1");
+const invRows = await page.locator("[data-testid=invoice-table] tbody tr").evaluateAll((els) => els.map((e) => [e.querySelector("td")?.textContent?.trim(), e.getAttribute("data-status"), e.textContent]));
+const paidRow = invRows.find((r) => r[0] === "1015"), laterRow = invRows.find((r) => r[0] === "1030");
+check(paidRow?.[1] === "PAID" && /Oct 14, 2026/.test(paidRow[2]) && /Wealthsimple/.test(paidRow[2]), `invoices: the one paid by e-transfer is matched to that payment (${paidRow?.[1]})`);
+check(laterRow?.[1] === "UNKNOWN" && /\$39\.14/.test(laterRow[2]) && /\$78\.08/.test(laterRow[2]), `invoices: GST and QST read; a newer one can't be called unpaid before its bank statement is imported (${laterRow?.[1]})`);
+const pdfRes = await page.request.get(BASE + (await page.locator("[data-testid=invoice-table] a[href^='/api/invoices/']").first().getAttribute("href")));
+check(pdfRes.ok() && pdfRes.headers()["content-type"] === "application/pdf" && (await pdfRes.body()).subarray(0, 4).toString() === "%PDF", "invoices: the original PDF can be opened");
+await page.setInputFiles("[data-testid=invoice-input]", invoicePdfs.slice(0, 1));
+await page.waitForFunction(() => /already uploaded/.test(document.querySelector("[data-testid=invoice-upload-results]")?.textContent ?? ""), null, { timeout: 60000 });
+check((await page.locator("[data-testid=invoice-table] tbody tr").count()) === 2, "invoices: the same invoice uploaded twice is kept once");
 await page.setInputFiles("[data-testid=supplier-input]", path.join(here, "..", "samples", "pdf", "supplier-statement-pronto.pdf"));
 await page.waitForSelector("[data-testid=supplier-verdict]", { timeout: 60000 });
 const verdict = await page.locator("[data-testid=supplier-verdict]").innerText();
@@ -658,7 +673,13 @@ check(JSON.stringify(supRows.filter(([k]) => k === "PAYMENT").map(([, st]) => st
 check(/Wealthsimple/.test(await page.locator("[data-testid=supplier-lines] tr[data-status=FOUND]").innerText()), "supplier check: the matching bank payment and its account are shown");
 check((await page.locator("[data-testid=supplier-due]").innerText()).includes("1,350.00") && /Adds up/.test(await page.locator("[data-testid=supplier-math]").innerText()), "supplier check: amount due read and their math checked");
 check(/1,350\.00/.test(await page.locator("[data-testid=supplier-open]").innerText()), "supplier check: what's still owed, by invoice");
+const onFile = await page.locator("[data-testid=supplier-lines] tr[data-kind=INVOICE]").allInnerTexts();
+check(/Invoice on file/.test(onFile.find((t) => /1015/.test(t)) ?? "") && /Invoice on file/.test(onFile.find((t) => /1030/.test(t)) ?? "") && /No copy on file/.test(onFile.find((t) => /1001/.test(t)) ?? ""),
+  "supplier check: their invoice lines are matched to the invoices you have");
 await shot("28-supplier-check");
+await page.locator("[data-testid=invoice-table] tbody tr").filter({ hasText: "1030" }).locator("button[aria-label^='Remove']").click();
+await page.waitForFunction(() => document.querySelectorAll("[data-testid=invoice-table] tbody tr").length === 1, null, { timeout: 15000 });
+check(true, "invoices: one can be removed");
 await browser.close();
 console.log(failures ? `\n${failures} check(s) failed` : "\nAll checks passed");
 process.exit(failures ? 1 : 0);

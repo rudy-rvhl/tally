@@ -7,7 +7,7 @@ const g = globalThis as unknown as { prisma?: PrismaClient };
 // on Node 24 fails with "ArrayBuffer is not detachable" when page data contains it).
 const createClient = () => new PrismaClient({
   log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
-  omit: { importBatch: { encryptedFile: true }, receipt: { data: true }, bankConnection: { accessToken: true } },
+  omit: { importBatch: { encryptedFile: true }, receipt: { data: true }, supplierInvoice: { file: true }, bankConnection: { accessToken: true } },
 });
 export const prisma: ReturnType<typeof createClient> = (g.prisma as ReturnType<typeof createClient> | undefined) ?? createClient();
 if (process.env.NODE_ENV !== "production") g.prisma = prisma;

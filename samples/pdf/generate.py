@@ -585,6 +585,35 @@ def supplier_statement():
     c.drawRightString(90, T(414), "900.00"); c.drawRightString(190, T(414), "450.00"); c.drawRightString(540, T(414), "$1,350.00")
     c.save()
 
+def supplier_invoice(no, date, month_fr, subtotal):
+    """A supplier's invoice (bilingual "FACTURE/INVOICE"): number and date under their headings, billed-to and
+    service addresses side by side, subtotal + GST 5% + QST 9.975%, terms Net 30. Fictional data."""
+    gst, qst = round(subtotal * 0.05, 2), round(subtotal * 0.09975, 2)
+    c = canvas.Canvas(str(OUT / f"invoice-pronto-{no}.pdf"), pagesize=letter)
+    T = lambda y: H - y
+    c.setFont("Helvetica-Bold", 12); c.drawString(400, T(40), "FACTURE/INVOICE")
+    c.setFont("Helvetica-Bold", 10); c.drawString(40, T(60), "PRONTO RENOVATION INC.")
+    c.setFont("Helvetica", 9); c.drawString(40, T(72), "Pronto Entretien"); c.drawString(40, T(84), "123, rue de l'Exemple"); c.drawString(40, T(96), "Laval, QC H0H 0H0")
+    c.drawString(420, T(72), "Date"); c.drawString(500, T(72), "No.")
+    c.drawString(410, T(96), date); c.drawString(500, T(96), str(no))
+    c.drawString(60, T(130), "Facturé à:/Invoice to:"); c.drawString(330, T(130), "Service à:/Service to:")
+    c.drawString(60, T(143), "EXEMPLE IMMOBILIER INC.")
+    c.drawString(60, T(155), "200 avenue des Exemples"); c.drawString(330, T(155), "200 avenue des Exemples")
+    c.drawString(60, T(167), "Montréal, Québec"); c.drawString(330, T(167), "Montreal, QC")
+    c.drawString(90, T(195), "Réf./P.O."); c.drawString(190, T(195), "Terme/Terms"); c.drawString(480, T(195), "compte/account")
+    c.drawString(200, T(207), "Net 30"); c.drawString(520, T(207), "777")
+    c.drawString(160, T(230), "Description"); c.drawString(360, T(230), "Qte/Qty"); c.drawString(420, T(230), "Prix/Price"); c.drawString(500, T(230), "Mont/Amt")
+    c.drawString(40, T(250), "ENTRETIEN GENERAL"); c.drawString(40, T(262), f"Pour le mois de {month_fr}")
+    c.drawString(40, T(274), "Main-d'oeuvre"); c.drawString(370, T(274), "1"); c.drawRightString(470, T(274), f"{subtotal:,.2f}"); c.drawRightString(545, T(274), f"{subtotal:,.2f}")
+    c.drawString(40, T(300), "Sous-total/Sub-total"); c.drawRightString(545, T(300), f"{subtotal:,.2f}")
+    c.drawString(40, T(312), "TPS/GST"); c.drawString(420, T(312), "5.00%"); c.drawRightString(545, T(312), f"{gst:,.2f}")
+    c.drawString(40, T(324), "TVQ/PST"); c.drawString(420, T(324), "9.975%"); c.drawRightString(545, T(324), f"{qst:,.2f}")
+    c.drawString(420, T(350), "Total"); c.drawRightString(545, T(350), f"${subtotal + gst + qst:,.2f}")
+    c.drawString(40, T(362), "TPS/GST 100000001"); c.drawString(40, T(374), "TVQ/QST 1000000001 TQ0001"); c.drawString(330, T(374), "Paiement-crédit/Pmt-Cr"); c.drawRightString(545, T(374), "$0.00")
+    c.drawString(330, T(386), "Balance Due"); c.drawRightString(545, T(386), f"${subtotal + gst + qst:,.2f}")
+    c.save()
+
 if __name__ == "__main__":
     chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all(); scotia_visa(); unusual(); scotia_personal(); scotia_fr_placements(); stessa_rent_roll(); amex_summary(); wealthsimple(); supplier_statement()
+    supplier_invoice(1015, "2026-10-01", "OCTOBRE 2026", 782.78); supplier_invoice(1030, "2026-11-02", "NOVEMBRE 2026", 782.78)
     print("generated", sorted(p.name for p in OUT.glob("*.pdf")))
