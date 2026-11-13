@@ -468,6 +468,17 @@ check(/12 rue Principale/.test(await page.locator("[data-testid=property-table]"
 check((await page.locator("[data-testid=account-table] tbody tr").count()) >= 4, "data analysis: one row per account");
 check(await page.isVisible("nav[aria-label=Sections] >> text=Accounts"), "data analysis: section navigation");
 
+// 11g. Payee tracker: which months a payee wasn't paid
+await go(`${BASE}/reports`);
+check(await page.isVisible("aside >> a:has-text('Payee tracker')"), "Payee tracker is under Reports in the side menu");
+await go(`${BASE}/reports/payees?q=SERVICE%20CHARGE&dir=out&n=12`);
+const payeeSummary = await page.locator("[data-testid=payee-summary]").innerText();
+const statuses = await page.locator("[data-testid=payee-months] a").evaluateAll((els) => els.map((e) => e.getAttribute("data-status")));
+if (process.env.TEST_PLAID === "1") check(/Nothing paid in November 2026/.test(payeeSummary) && statuses[statuses.length - 1] === "MISSING", `payee tracker: the missed month is shown (${payeeSummary.slice(0, 90)})`);
+else check(/No month missed/.test(payeeSummary), "payee tracker: no month missed");
+check(statuses.filter((x) => x === "NOT_STARTED").length >= 1 && !statuses.slice(0, -2).includes("MISSING"), "payee tracker: months before the first payment aren't counted as missed");
+await shot("26-payee-tracker");
+
 await go(`${BASE}/reports?month=2026-10`);
 check(await page.isVisible("text=Bank book for your accountant"), "bank book download offered on Reports");
 const fyStart = await page.locator("#bb-start").inputValue();

@@ -19,6 +19,8 @@ import { isoDate } from "../engine/dates";
 import { classify, loadClassifierContext } from "./classifier";
 import { audit } from "./audit";
 import { evaluateStatement } from "./reconciliation";
+import { commitImport } from "./import";
+import { descriptorSimilarity } from "../engine/merchants";
 
 const REASON = "Information printed on the statement (a balance or a limit), not a transaction (corrected automatically)";
 /** Bump when the reader improves in a way that should re-check imported statements once. */
@@ -151,4 +153,83 @@ async function repairBatch(batchId: string) {
   }
   await audit(prisma, userId, "ImportBatch", batch.id, `repair.checked.${REPAIR_VERSION}`, undefined, undefined);
   return { excluded, flipped, statement };
+}
+
+/**
+ * Re-read statements an older reader got wrong (e.g. Wealthsimple: "–$92.00" missed, so the running
+ * balance was taken as the amount). Done once per statement file, and only when the new reading
+ * balances to the cent while what's stored doesn't, so statements you corrected yourself are kept.
+ * Wrong rows are set aside (never deleted), with your category, notes, building and tenant carried over.
+ */
+const REREAD_VERSION = "v3";
+export async function rereadMisreadStatements(): Promise<{ statements: number; replaced: number; added: number }> {
+  const out = { statements: 0, replaced: 0, added: 0 };
+  const done = new Set((await prisma.auditLog.findMany({ where: { entityType: "ImportBatch", action: `repair.reread.${REREAD_VERSION}` }, select: { entityId: true } })).map((a) => a.entityId));
+  const batches = await prisma.importBatch.findMany({ where: { fileType: "PDF", encryptedFile: { not: null } }, select: { id: true }, orderBy: { createdAt: "asc" } });
+  for (const { id } of batches.filter((b) => !done.has(b.id))) {
+    try {
+      const r = await rereadBatch(id);
+      if (r) { out.statements++; out.replaced += r.replaced; out.added += r.added; }
+    } catch (e) {
+      log("warn", "repair.reread.failed", { batchId: id, error: (e as Error).message.slice(0, 300) });
+    }
+  }
+  if (out.statements) console.log(`\n  LedgerIQ re-read ${out.statements} statement(s) that had been misread: ${out.replaced} wrong line(s) set aside and replaced (${out.added} added). Details are in Review.\n`);
+  return out;
+}
+
+async function rereadBatch(batchId: string) {
+  const batch = await prisma.importBatch.findUniqueOrThrow({ where: { id: batchId }, omit: { encryptedFile: false }, include: { account: true, statements: true } });
+  const { userId, account } = batch;
+  const mark = () => audit(prisma, userId, "ImportBatch", batch.id, `repair.reread.${REREAD_VERSION}`, undefined, undefined);
+  const buf = decrypt(batch.encryptedFile!);
+  const parsed = await parseStatement(batch.fileName, buf, account.type);
+  const liability = ["CREDIT_CARD", "BUSINESS_CREDIT_CARD", "LINE_OF_CREDIT"].includes(account.type);
+  const flow = (rows: { amountCents: number }[]) => rows.reduce((a, t) => a + t.amountCents, 0);
+  const expected = parsed.openingBalanceCents !== null && parsed.closingBalanceCents !== null
+    ? (liability ? parsed.openingBalanceCents - parsed.closingBalanceCents : parsed.closingBalanceCents - parsed.openingBalanceCents) : null;
+  // What's stored for this account over the statement's period (whichever import it came from).
+  const inPeriod = parsed.periodStart && parsed.periodEnd
+    ? await prisma.transaction.findMany({ where: { accountId: account.id, excluded: false, date: { gte: parsed.periodStart, lte: parsed.periodEnd } } }) : [];
+  const stored = await prisma.transaction.findMany({ where: { importBatchId: batch.id, excluded: false } });
+  // Only when the new reading is provably right and what's stored isn't.
+  if (expected === null || Math.abs(flow(parsed.transactions) - expected) > 1 || Math.abs(flow(inPeriod) - expected) <= 1 || !stored.length) { await mark(); return null; }
+
+  const key = (d: Date, c: number) => `${isoDate(d)}|${c}`;
+  const fresh = new Map<string, number>();
+  for (const t of parsed.transactions) fresh.set(key(t.date, t.amountCents), (fresh.get(key(t.date, t.amountCents)) ?? 0) + 1);
+  const wrong = stored.filter((t) => { const k = key(t.date, t.amountCents); const n = fresh.get(k) ?? 0; if (n > 0) { fresh.set(k, n - 1); return false; } return true; });
+  if (!wrong.length) { await mark(); return null; }
+
+  // Import the correct reading (rows already stored correctly are recognised and skipped).
+  const hadStatement = batch.statements[0] ?? null;
+  const res = await commitImport({ userId, accountId: account.id, fileName: batch.fileName, buf, decisions: {} });
+  await audit(prisma, userId, "ImportBatch", res.batchId, `repair.reread.${REREAD_VERSION}`, undefined, { from: batch.id }); // the corrected copy needs no re-read
+  if (hadStatement && res.statementId) {
+    await prisma.statement.delete({ where: { id: res.statementId } });
+    await prisma.statement.update({ where: { id: hadStatement.id }, data: { openingBalanceCents: parsed.openingBalanceCents!, closingBalanceCents: parsed.closingBalanceCents!, periodStart: parsed.periodStart ?? hadStatement.periodStart, periodEnd: parsed.periodEnd ?? hadStatement.periodEnd } });
+  }
+  const added = await prisma.transaction.findMany({ where: { importBatchId: res.batchId } });
+  for (const t of wrong) {
+    // Carry your own choices to the corrected line (same day, similar wording).
+    const twin = added.find((n) => +n.date === +t.date && descriptorSimilarity(n.originalDescription, t.originalDescription.replace(/[-–]?\$?[\d,]+\.\d{2}/g, "")) >= 0.4);
+    await prisma.$transaction(async (db) => {
+      await db.transaction.update({ where: { id: t.id }, data: { excluded: true, excludedReason: "Misread from the statement by an older version (corrected automatically)" } });
+      await db.reviewItem.updateMany({ where: { txnId: t.id, status: "OPEN" }, data: { status: "RESOLVED", resolution: "Statement re-read", resolvedAt: new Date() } });
+      if (twin) {
+        const carry = {
+          ...(t.categoryConfirmed ? { categoryId: t.categoryId, categorySource: t.categorySource, categoryConfirmed: true, categoryConfidence: 1 } : {}),
+          ...(t.notes && !twin.notes ? { notes: t.notes } : {}), ...(t.buildingId && !twin.buildingId ? { buildingId: t.buildingId } : {}),
+          ...(t.tenantConfirmed ? { tenantId: t.tenantId, tenantConfirmed: true } : {}),
+        };
+        if (Object.keys(carry).length) await db.transaction.update({ where: { id: twin.id }, data: carry });
+      }
+      await audit(db, userId, "Transaction", t.id, "repair.reread_exclude", { amountCents: t.amountCents, excluded: false }, { excluded: true, replacedBy: twin?.id ?? null });
+    });
+  }
+  const st = hadStatement?.id ?? res.statementId;
+  if (st) await evaluateStatement(userId, st);
+  await prisma.reviewItem.create({ data: { userId, type: "RECONCILIATION", statementId: st ?? undefined, message: `We re-read your ${account.institution} statement (${batch.fileName}) with an improved reader: ${wrong.length} line${wrong.length === 1 ? " had" : "s had"} been misread (for example a balance taken as the amount, or money in shown as money out). ${wrong.length === 1 ? "It's" : "They're"} set aside and replaced by the correct amounts, which now match the statement's balances. Your categories and notes were carried over.` } });
+  await mark();
+  return { replaced: wrong.length, added: res.imported };
 }

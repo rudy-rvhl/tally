@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
-import { LayoutDashboard, ShoppingBag, Landmark, CheckCircle2, BarChart3, Upload, Calculator, Settings, FileText, Home, LineChart } from "lucide-react";
+import { LayoutDashboard, ShoppingBag, Landmark, CheckCircle2, BarChart3, Upload, Calculator, Settings, FileText, Home, LineChart, CalendarCheck } from "lucide-react";
 
 export const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard, desc: "Your finances at a glance" },
@@ -17,6 +17,7 @@ export const REPORT_PAGES = [
   { href: "/reports", label: "Monthly report", icon: FileText },
   { href: "/reports/rent-roll", label: "Rent roll", icon: Home },
   { href: "/reports/analysis", label: "Data analysis", icon: LineChart },
+  { href: "/reports/payees", label: "Payee tracker", icon: CalendarCheck },
 ];
 const reportActive = (path: string, href: string) => (href === "/reports" ? path === "/reports" : path === href || path.startsWith(href + "/"));
 

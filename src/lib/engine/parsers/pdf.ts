@@ -23,7 +23,9 @@ interface Line { page: number; y: number; cells: Cell[]; text: string }
 
 /** Group words into lines (same baseline) and merge nearby words into cells. */
 export function buildLines(words: Word[], gap = 4.5, rowTolerance = 2.5): Line[] {
-  const sorted = words.filter((w) => w.str.trim()).sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x);
+  // Typographic dashes before an amount are minus signs ("–$92.00" on Wealthsimple, "−12.50").
+  const sorted = words.filter((w) => w.str.trim()).map((w) => ({ ...w, str: w.str.replace(/[\u2212\u2013\u2014](?=\s?\$?\s?\d)/g, "-") }))
+    .sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x);
   const lines: { page: number; y: number; words: Word[] }[] = [];
   for (const w of sorted) {
     const last = lines[lines.length - 1];
@@ -118,10 +120,10 @@ const HEADER_WORDS: [RegExp, ColKind][] = [
   [/^(int[eé]r[eê]ts?|interest)( \(\$\))?$/i, "INTEREST"],
   [/^(capital vers[eé]|advances?|d[eé]boursements?)( \(\$\))?$/i, "ADVANCE"],
   [/^(remboursement|principal|capital rembours[eé]|principal paid)( \(\$\))?$/i, "PRINCIPAL"],
-  [/(withdrawals?|withdrawn|debits?|retraits?|cheques? & debits|paid out|charges?|d[eé]bit|frais|fees?)( \(\$\))?( \$)?$/i, "OUT"],
-  [/(deposits?|deposited|credits?|d[eé]p[oô]ts?|paid in|payments? (and|&) credits|cr[eé]dit)( \(\$\))?( \$)?$/i, "IN"],
-  [/^(amount|montant)\s*(\(\s?\$\s?\)|\$)?$/i, "AMOUNT"],
-  [/^(balance|solde)( \(\$\))?( \$)?$/i, "BALANCE"],
+  [/(withdrawals?|withdrawn|debits?|retraits?|cheques? & debits|paid out|charges?|d[eé]bit|frais|fees?)(\s*\(\s?(\$|cad|usd|\$\s?cad|\$\s?usd)\s?\)|\s*\$|\s+cad|\s+usd)?$/i, "OUT"],
+  [/(deposits?|deposited|credits?|d[eé]p[oô]ts?|paid in|payments? (and|&) credits|cr[eé]dit)(\s*\(\s?(\$|cad|usd|\$\s?cad|\$\s?usd)\s?\)|\s*\$|\s+cad|\s+usd)?$/i, "IN"],
+  [/^(amount|montant)(\s*\(\s?(\$|cad|usd|\$\s?cad|\$\s?usd)\s?\)|\s*\$|\s+cad|\s+usd)?$/i, "AMOUNT"],
+  [/^(balance|solde)(\s*\(\s?(\$|cad|usd|\$\s?cad|\$\s?usd)\s?\)|\s*\$|\s+cad|\s+usd)?$/i, "BALANCE"],
 ];
 
 type HeaderMode = "TXN" | "LOAN" | "OTHER";
@@ -166,6 +168,20 @@ export const INSTITUTION_KEYWORDS: Array<[RegExp, string]> = [
   [/desjardins/i, "Desjardins"],
   [/american express|\bamex\b/i, "American Express"],
   [/tangerine/i, "Tangerine"],
+  [/wealthsimple/i, "Wealthsimple"],
+  [/\beq bank\b|equitable bank/i, "EQ Bank"],
+  [/neo financial/i, "Neo Financial"],
+  [/\bkoho\b/i, "KOHO"],
+  [/\bhsbc\b/i, "HSBC"],
+  [/\bmbna\b/i, "MBNA"],
+  [/capital one/i, "Capital One"],
+  [/pc financial|pc mastercard/i, "PC Financial"],
+  [/rogers bank/i, "Rogers Bank"],
+  [/\batb financial\b/i, "ATB Financial"],
+  [/vancity/i, "Vancity"],
+  [/coast capital/i, "Coast Capital"],
+  [/meridian credit union/i, "Meridian"],
+  [/questrade/i, "Questrade"],
   [/simplii/i, "Simplii Financial"],
   [/laurentian|laurentienne/i, "Laurentian Bank"],
 ];
@@ -194,12 +210,19 @@ export function findPeriod(text: string): { start: Date | null; end: Date | null
     }
   }
   // Dates printed under "FROM" / "TO" labels on the line above (Scotiabank business): "AUG 31 2026  SEP 29 2026".
+  // "Oct 1 - Oct 31, 2026" (year printed once, no "from")
+  const bare = text.match(new RegExp(`(?:^|\\s)((?:${MON}\\s\\d{1,2})|(?:\\d{1,2}\\s${MON}))\\s*[-–]\\s*(${LONG_DATE})`, "im"));
+  if (bare) {
+    const a = parseLooseDate(bare[1]), b = parseLooseDate(bare[2]);
+    if (a && b?.y) { const y = a.m > b.m ? b.y - 1 : b.y; const s0 = utcDate(y, a.m, a.d), e0 = utcDate(b.y, b.m, b.d); if (s0 && e0 && e0 > s0) return { start: s0, end: e0 }; }
+  }
   const pair = text.match(new RegExp(`(${LONG_DATE})\\s+(${LONG_DATE})`, "i"));
   if (pair) {
     const a = parseLooseDate(pair[1]), b = parseLooseDate(pair[2]);
     if (a?.y && b?.y) {
       const s0 = utcDate(a.y, a.m, a.d), e0 = utcDate(b.y, b.m, b.d);
-      if (s0 && e0 && e0 >= s0 && e0.getTime() - s0.getTime() <= 100 * 86400000) return { start: s0, end: e0 };
+      // Two dates side by side are a period only if they're weeks apart (not a row's date and posting date).
+      if (s0 && e0 && e0.getTime() - s0.getTime() >= 20 * 86400000 && e0.getTime() - s0.getTime() <= 100 * 86400000) return { start: s0, end: e0 };
     }
   }
   const open = text.match(new RegExp(`(?:opening date|date d'ouverture|opening balance on|solde d'ouverture au)\\s*:?\\s*(${LONG_DATE})`, "i"));
@@ -232,6 +255,35 @@ function accountFromLayout(lines: Line[]): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Balances printed under their label in a summary box:
+ *   "OCT 1 BALANCE      OCT 31 BALANCE"          (Wealthsimple)
+ *   "$3,160.80          $8,450.40"
+ * The earlier date (or "opening / previous") is the opening balance, the later one the closing balance.
+ */
+export function labelledBalances(lines: Line[]): { opening: number | null; closing: number | null } {
+  const found: { label: string; cents: number }[] = [];
+  for (let i = 0; i < Math.min(lines.length, 80); i++) {
+    const l = lines[i];
+    if (l.cells.some((c) => AMOUNT_CELL.test(c.str.trim()))) continue;
+    for (const c of l.cells.filter((x) => /\b(balance|solde)\b/i.test(x.str) && x.str.length < 40)) {
+      for (const n of lines.slice(i + 1, i + 3).filter((n) => n.page === l.page && n.y - l.y <= 30)) {
+        const v = n.cells.find((d) => AMOUNT_CELL.test(d.str.trim()) && d.x >= c.x - 30 && d.x <= c.x2 + 30);
+        if (v) { const a = readAmount(v.str); if (a) found.push({ label: c.str.trim(), cents: a.explicitMinus && !a.credit ? -a.cents : a.cents }); break; }
+      }
+    }
+  }
+  if (!found.length) return { opening: null, closing: null };
+  const dated = found.map((f) => ({ ...f, d: f.label.match(new RegExp(`(${DATE_TOKEN})`, "i"))?.[1] })).filter((f) => f.d).map((f) => ({ ...f, ld: parseLooseDate(f.d!) }));
+  if (dated.length >= 2 && dated.every((f) => f.ld)) {
+    const sorted = [...dated].sort((a, b) => a.ld!.m - b.ld!.m || a.ld!.d - b.ld!.d);
+    return { opening: sorted[0].cents, closing: sorted[sorted.length - 1].cents };
+  }
+  const open = found.find((f) => /opening|previous|beginning|start|ancien|pr[eé]c[eé]dent|d[eé]but|ouverture/i.test(f.label));
+  const close = found.find((f) => /closing|new|ending|nouveau|fermeture|fin\b/i.test(f.label));
+  return { opening: open?.cents ?? null, closing: close?.cents ?? null };
 }
 
 const AMT_IN_TEXT = "-?\\(?\\$?\\s?(?:\\d{1,3}(?:[ ,\\u00a0]\\d{3})+|\\d+)[.,]\\d{2}\\)?(?:\\s?(?:CR|DR))?";
@@ -309,6 +361,7 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
       res.accountTypeHint = k.type === "PERSONAL_SAVINGS" && kind.ownership === "BUSINESS" ? "BUSINESS_SAVINGS" : k.type === "BUSINESS_CHEQUING" && kind.ownership === "PERSONAL" ? "PERSONAL_CHEQUING" : k.type;
     }
   }
+  const labelled = labelledBalances(lines);
   const textOpening = amountAfter(text, /(opening balance|previous (statement )?balance|balance forward|solde (pr[eé]c[eé]dent|d'ouverture|report[eé])|ancien solde)/);
   const textClosing = amountAfter(text, /(closing balance|new balance|ending balance|nouveau solde|solde (de fermeture|final))/);
 
@@ -507,6 +560,9 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
         else { signed = -amt.amt.cents; warnings.push("__unsigned"); }
       }
       if (signed === null) { current = null; continue; }
+      // Seed the running balance with the opening balance printed elsewhere (summary box), so even the
+      // first row's direction can be checked when the statement shows unsigned amounts.
+      if (prevBalance === null && !S.rows.length && sections.length === 1 && (textOpening ?? labelled.opening) !== null) prevBalance = (textOpening ?? labelled.opening)!;
       if (balance !== null && prevBalance !== null) {
         usedBalance = true;
         const expect = (v: number) => (liability ? prevBalance! - v : prevBalance! + v);
@@ -516,6 +572,8 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
       }
       const u = warnings.indexOf("__unsigned");
       if (u >= 0) warnings.splice(u, 1, "We couldn't tell from the statement whether this is money in or out. Please check it.");
+      // No opening balance printed: the first row's balance minus its amount is where the period started.
+      if (balance !== null && prevBalance === null && S.opening === null && !S.rows.length && !warnings.length) S.opening = liability ? balance + signed : balance - signed;
       if (balance !== null) { prevBalance = balance; S.closing = balance; }
       // No balance printed on this row: keep a running balance so the next printed one can be checked.
       else if (prevBalance !== null) prevBalance = liability ? prevBalance - signed : prevBalance + signed;
@@ -557,8 +615,8 @@ export function parseLayout(lines: Line[], accountType: AccountTypeName, parser 
     notes.push(`This statement covers ${withRows.length} accounts. We're showing "${chosen.name}". You can pick another one above.`);
   }
   res.transactions = (chosen?.rows ?? []).map((t, i) => ({ ...t, sourceRow: i + 1 }));
-  res.openingBalanceCents = chosen?.opening ?? (sections.length <= 1 ? textOpening : null);
-  res.closingBalanceCents = chosen?.closing ?? (sections.length <= 1 ? textClosing : null);
+  res.openingBalanceCents = chosen?.opening ?? (sections.length <= 1 ? textOpening ?? labelled.opening : null);
+  res.closingBalanceCents = chosen?.closing ?? (sections.length <= 1 ? textClosing ?? labelled.closing : null);
   if (sections.length <= 1 && textClosing !== null) res.closingBalanceCents = textClosing;
   if (sections.length <= 1 && textOpening !== null && res.openingBalanceCents === null) res.openingBalanceCents = textOpening;
   if (loanPayments.length) {

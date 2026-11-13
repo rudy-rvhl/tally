@@ -515,6 +515,42 @@ def amex_summary():
     c.drawString(50, y, "Membership Rewards points earned this period: 978")
     c.save()
 
+def wealthsimple():
+    """Wealthsimple-style chequing: one AMOUNT (CAD) column, money out written with an en dash ("–$92.00"),
+    balances in a summary box under "OCT 1 BALANCE / OCT 31 BALANCE", period "Oct 1 - Oct 31, 2026"."""
+    c = canvas.Canvas(str(OUT / "wealthsimple-chequing.pdf"), pagesize=letter)
+    T = lambda y: H - y
+    c.setFont("Helvetica-Bold", 12); c.drawString(307, T(40), "Chequing monthly statement")
+    c.setFont("Helvetica", 9); c.drawString(24, T(55), "Wealthsimple"); c.drawString(360, T(55), "Oct 1 - Oct 31, 2026")
+    c.drawString(28, T(84), "EXEMPLE IMMOBILIER INC."); c.drawString(28, T(97), "200 avenue des Exemples")
+    c.drawString(28, T(147), "Account number: 50000042")
+    c.drawString(279, T(191), "OCT 1 BALANCE"); c.drawString(362, T(191), "OCT 31 BALANCE"); c.drawString(43, T(195), "Your October summary")
+    c.drawString(279, T(211), "$2,000.00"); c.drawString(362, T(211), "$2,612.43")
+    c.drawString(24, T(261), "Activity")
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(25, T(285), "DATE"); c.drawString(86, T(285), "POSTED DATE"); c.drawString(146, T(285), "DESCRIPTION"); c.drawString(325, T(285), "AMOUNT (CAD)"); c.drawString(388, T(285), "BALANCE (CAD)")
+    c.setFont("Helvetica", 8)
+    rows = [("2026-10-01", "Interac e-Transfer® Received from MARIE TREMBLAY", 1250.00),
+            ("2026-10-01", "Interest earned", 0.59),
+            ("2026-10-02", "TRIBUNAL ADMIN LOGEMENT", -92.00),
+            ("2026-10-05", "Online bill payment for TAXE SCOLAIRE", -628.33),
+            ("2026-10-14", "Interac e-Transfer® Out to PRONTO RENOVATION", -900.00),
+            ("2026-10-28", "THE HOME DEPOT #7149", 41.12),
+            ("2026-10-31", "Interac e-Transfer® Received from JEAN GAGNON", 980.00),
+            ("2026-10-31", "AMZN MKTP CA*P31NP2W13", -38.95)]
+    y, bal = 310, 2000.00
+    for d, desc, amt in rows:
+        bal = round(bal + amt, 2)
+        # Long names wrap onto a second line, as on the real statements
+        first, rest = (desc, "") if len(desc) <= 34 else (desc[:desc.rfind(" ", 0, 34)], desc[desc.rfind(" ", 0, 34) + 1:])
+        c.drawString(24, T(y), d); c.drawString(85, T(y), d); c.drawString(146, T(y), first)
+        if rest: c.drawString(146, T(y + 10), rest)
+        c.drawRightString(380, T(y), (f"$" if amt >= 0 else "\u2013$") + f"{abs(amt):,.2f}")
+        c.drawRightString(445, T(y), f"${bal:,.2f}")
+        y += 26
+    c.drawString(24, T(575), "Page 1 of 1"); c.drawString(258, T(575), "Wealthsimple Payments Inc., 80 Exemple Ave, Toronto, ON")
+    c.save()
+
 if __name__ == "__main__":
-    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all(); scotia_visa(); unusual(); scotia_personal(); scotia_fr_placements(); stessa_rent_roll(); amex_summary()
+    chequing(); card(); amex(); desjardins_fr(); desjardins_multi(); scanned(); scotia_all(); scotia_visa(); unusual(); scotia_personal(); scotia_fr_placements(); stessa_rent_roll(); amex_summary(); wealthsimple()
     print("generated", sorted(p.name for p in OUT.glob("*.pdf")))

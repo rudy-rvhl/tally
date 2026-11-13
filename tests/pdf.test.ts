@@ -243,4 +243,18 @@ describe("Desjardins business statement with several accounts", () => {
     for (const s of ["PAYMENT RECEIVED - THANK YOU", "INTEREST CHARGES", "ANNUAL FEE", "OVERLIMIT FEE", "Over limit fee", "HOME DEPOT #7051", "LIMITED EDITION STORE", "Frais de dépassement de limite"])
       expect(isStatementInfo(s), s).toBe(false);
   });
+
+  it("Wealthsimple: money out with an en dash, one AMOUNT (CAD) column, balances in a summary box", async () => {
+    const r = await parsePdf(pdf("wealthsimple-chequing.pdf"), "BUSINESS_CHEQUING");
+    expect([r.institution, r.accountHint, r.accountTypeHint]).toEqual(["Wealthsimple", "0042", "BUSINESS_CHEQUING"]);
+    expect([isoDate(r.periodStart!), isoDate(r.periodEnd!)]).toEqual(["2026-10-01", "2026-10-31"]);
+    expect(r.transactions[0].description).toBe("Interac e-Transfer® Received from MARIE TREMBLAY");
+    expect(rows(r).map(([d, c]) => [d, c])).toEqual([
+      ["2026-10-01", 125000], ["2026-10-01", 59], ["2026-10-02", -9200], ["2026-10-05", -62833],
+      ["2026-10-14", -90000], ["2026-10-28", 4112], ["2026-10-31", 98000], ["2026-10-31", -3895],
+    ]);
+    expect(r.transactions.every((t) => !t.warnings.length)).toBe(true); // even the first row, thanks to the opening balance
+    expect([r.openingBalanceCents, r.closingBalanceCents]).toEqual([200000, 261243]);
+    expect(balances("BUSINESS_CHEQUING", r).balanced).toBe(true);
+  });
 });

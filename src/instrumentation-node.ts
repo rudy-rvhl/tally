@@ -3,6 +3,8 @@ import { repairBalanceRows } from "./lib/services/repair";
 
 try {
   await repairBalanceRows();
+  // Re-reading statements can take a little while (OCR): in the background, so the app opens right away.
+  import("./lib/services/repair").then((m) => m.rereadMisreadStatements()).catch((e) => console.warn("LedgerIQ: statement re-read skipped:", (e as Error).message.split("\n")[0]));
 } catch (e) {
   // Never stop the app from starting (e.g. the database isn't reachable yet).
   console.warn("LedgerIQ: the automatic statement check was skipped:", (e as Error).message.split("\n")[0]);
